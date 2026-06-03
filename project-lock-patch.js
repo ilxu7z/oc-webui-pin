@@ -1,12 +1,12 @@
 <!-- Project Lock UI Injection -->
-<!-- OpenClaw WebUI 项目锁定补丁 v7 -->
-<!-- 更新日期: 2026-05-15 -->
+<!-- OpenClaw WebUI 项目锁定补丁 v8 -->
+<!-- 更新日期: 2026-06-03 -->
 <!-- 注入位置: dist/control-ui/index.html 的 </body> 标签前 -->
 <!-- 功能: 聊天输入框下方的 📌 项目路径锁定 UI -->
 <!-- v7 修复: ①Shadow DOM 穿透（openclaw-app shadowRoot MutationObserver） -->
 <!--          ②WS 劫持增加 debug 日志 ③备用轮询 fallback ④DOMContentLoaded 时二次 attach -->
 <script>
-// OpenClaw WebUI 项目锁定 v7 — Shadow DOM 穿透 + 链式 WS 劫持 + 保护期 + SPA 导航感知
+// OpenClaw WebUI 项目锁定 v8 — 流式渲染检测修复 + Shadow DOM characterData
 (function(){'use strict';
 var SK;
 var GRACE_MS = 3500;
@@ -238,11 +238,14 @@ function mkEl(){
     for(var i=0;i<assists.length;i++) targets.push(assists[i]);
     for(var t=0;t<targets.length;t++){
       var el=targets[t];
-      if(!el.dataset.plScanned){
-        el.dataset.plScanned='1';
-        var html=el.innerHTML||'';
-        var raw=el.textContent||'';
-        if(scanForProjectPath(html)||scanForProjectPath(raw)) return true;
+      // 修复 ⑧：不在首次扫描时标记，只在匹配成功后标记
+      // 流式渲染时 bubble 内容会逐步填充，过早 plScanned 会导致完整内容无法被扫描
+      if(el.dataset.plDone) continue; // 已成功匹配过才跳过
+      var html=el.innerHTML||'';
+      var raw=el.textContent||'';
+      if(scanForProjectPath(html)||scanForProjectPath(raw)){
+        el.dataset.plDone='1'; // 匹配成功才标记，防止重复处理
+        return true;
       }
     }
     return false;
@@ -269,7 +272,8 @@ function mkEl(){
         }
       },500);
     });
-    shadowObs.observe(app.shadowRoot,{childList:true,subtree:true});
+    // 修复 ⑧：加 characterData:true，流式渲染的文本节点变更也能触发扫描
+    shadowObs.observe(app.shadowRoot,{childList:true,subtree:true,characterData:true});
     return true;
   }
 
@@ -301,7 +305,7 @@ function mkEl(){
       for(var i=0;i<added.length;i++){
         var n=added[i];
         if(n.nodeType!==1) continue;
-        if(n.dataset&&n.dataset.plScanned) continue;
+        // 修复 ⑧：用 plDone 代替 plScanned
         var targets=[];
         if(n.classList&&(n.classList.contains('chat-bubble')&&!n.classList.contains('chat-reading-indicator'))){
           targets.push(n);
@@ -313,16 +317,19 @@ function mkEl(){
         }
         for(var t=0;t<targets.length;t++){
           var el=targets[t];
-          if(el.dataset.plScanned) continue;
-          el.dataset.plScanned='1';
+          if(el.dataset.plDone) continue;
           var html=el.innerHTML||'';
           var raw=el.textContent||'';
-          if(scanForProjectPath(html)||scanForProjectPath(raw)) return;
+          if(scanForProjectPath(html)||scanForProjectPath(raw)){
+            el.dataset.plDone='1';
+            return;
+          }
         }
       }
     },500);
   });
-  replyObs.observe(document.body,{childList:true,subtree:true});
+  // 修复 ⑧：加 characterData:true
+  replyObs.observe(document.body,{childList:true,subtree:true,characterData:true});
 
   w.appendChild(lb);
   w.appendChild(inp);
