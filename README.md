@@ -11,7 +11,7 @@
 | 📌 检测按钮 | 点击自动从 agent 回复中检测项目路径 |
 | 路径输入框 | 输入路径按 Enter 锁定，清空后按 Enter 解除 |
 | 自动标记 | 每条发送消息自动追加 `[Project: /path]` |
-| Agent 隔离 | 不同 agent 使用独立 localStorage key，互不干扰 |
+| Session 隔离 | 每个 session 使用独立 localStorage key，互不干扰 |
 | WebSocket 拦截 | 从 agent 流式响应中捕获 `[Project: ...]` |
 | Shadow DOM 支持 | 穿透 `openclaw-app` web component 的 shadow root |
 | SPA 导航感知 | Monkey-patch `pushState/replaceState` 响应 Agent 切换 |
@@ -92,7 +92,7 @@ python3 install.py
 |------|----------|
 | 📌 点击后没有反应 | 打开 DevTools Console，检查是否有报错 |
 | 路径检测到了但没填入 | Console 搜 `[ProjectLock]`，确认是否触发了 `Detected` |
-| 切换 agent 后路径消失 | 正常——每个 agent 独立存储，切换后需重新锁定 |
+| 切换 session 后路径消失 | 正常——每个 session 独立存储，切换后需重新锁定 |
 | 补丁注入后页面白屏 | 检查 JS 语法是否完整（可能复制时截断了 `<script>` 标签） |
 | 更新后补丁丢失 | 重新运行 `python3 install.py` |
 

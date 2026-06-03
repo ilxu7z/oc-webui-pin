@@ -19,16 +19,21 @@ function agentKey(){
   var m=location.search.match(/agent[=:]([^&]+)/)||location.hash.match(/agent[=:]([^&]+)/);
   var p=location.pathname.match(/agent\/([^/]+)/);
   var name=(m&&m[1])||(p&&p[1])||'main';
-  // 解析 session 参数中的 agent name（格式 xxx:agentName）
+  // 解析 session 参数（格式 sessionId:agentName）
   var s=location.search.match(/session=([^&]+)/);
+  var sessionId='';
   if(s){
     try{
       var d=decodeURIComponent(s[1]);
       var parts=d.split(':');
+      sessionId=parts[0]||'';
       if(parts.length>=2&&parts[1].length>0){name=parts[1]}
     }catch(e){}
   }
-  return 'openclaw_project_lock_'+name.replace(/[^a-zA-Z0-9_-]/g,'_');
+  // ⑩ session 维度：每个 session 独立锁定，不跨 session 共享
+  var key='openclaw_project_lock_'+name.replace(/[^a-zA-Z0-9_-]/g,'_');
+  if(sessionId){key+='_'+sessionId.replace(/[^a-zA-Z0-9_-]/g,'_')}
+  return key;
 }
 function resetSK(){ SK = null; }
 function gp(){if(!SK)SK=agentKey();try{return localStorage.getItem(SK)||''}catch(e){return ''}}
