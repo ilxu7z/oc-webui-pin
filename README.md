@@ -1,32 +1,32 @@
 # oc-webui-pin
 
-📌 **OpenClaw WebUI Project Lock Patch**
+📌 **OpenClaw WebUI 项目锁定补丁**
 
-Pin your working directory in the OpenClaw chat UI. Prevents task drift across long conversations by injecting a project path lock into the WebUI toolbar.
+在 OpenClaw 聊天 UI 中锁定工作目录，防止长对话中任务漂移。通过在 WebUI 工具栏注入项目路径锁定功能实现。
 
-## Features
+## 功能
 
-| Feature | Description |
-|---------|-------------|
-| 📌 Detect Button | Click to auto-detect project path from agent response |
-| Path Input | Type a path + Enter to lock, clear + Enter to unlock |
-| Auto Tag | Appends `[Project: /path]` to every outgoing message |
-| Agent Isolation | Each agent uses independent localStorage key |
-| WebSocket Intercept | Captures `[Project: ...]` from agent streaming responses |
-| Shadow DOM Support | Penetrates `openclaw-app` web component shadow root |
-| SPA Navigation | Monkey-patches `pushState/replaceState` for agent switching |
-| Grace Period | 3.5s protection against historical message overwrites |
+| 功能 | 说明 |
+|------|------|
+| 📌 检测按钮 | 点击自动从 agent 回复中检测项目路径 |
+| 路径输入框 | 输入路径按 Enter 锁定，清空后按 Enter 解除 |
+| 自动标记 | 每条发送消息自动追加 `[Project: /path]` |
+| Agent 隔离 | 不同 agent 使用独立 localStorage key，互不干扰 |
+| WebSocket 拦截 | 从 agent 流式响应中捕获 `[Project: ...]` |
+| Shadow DOM 支持 | 穿透 `openclaw-app` web component 的 shadow root |
+| SPA 导航感知 | Monkey-patch `pushState/replaceState` 响应 Agent 切换 |
+| 启动保护期 | 3.5 秒保护期，防止历史消息覆盖当前锁定 |
 
-## Compatibility
+## 兼容性
 
-- **OpenClaw**: `@qingchencloud/openclaw-zh 2026.5.x` (zh edition)
-- **Tested**: 2026.5.28-zh.1
-- **CSS selectors**: `.agent-chat__toolbar`, `.agent-chat__input-btn`, `.chat-bubble`, `openclaw-app`
-- **Protocol**: WebSocket (no SSE dependency)
+- **OpenClaw**: `@qingchencloud/openclaw-zh 2026.5.x`（中文版）
+- **已测试**: 2026.5.28-zh.1
+- **CSS 选择器**: `.agent-chat__toolbar`、`.agent-chat__input-btn`、`.chat-bubble`、`openclaw-app`
+- **通信协议**: WebSocket（不依赖 SSE）
 
-## Install
+## 安装
 
-### Method 1: Auto Install (Recommended)
+### 方法一：自动安装（推荐）
 
 ```bash
 git clone git@github-ilxu7z:ilxu7z/oc-webui-pin.git
@@ -34,68 +34,68 @@ cd oc-webui-pin
 python3 install.py
 ```
 
-### Method 2: Manual Injection
+### 方法二：手动注入
 
-1. Open target file:
+1. 打开目标文件：
    ```bash
    # macOS/Linux
    sudo nano /usr/local/lib/node_modules/@qingchencloud/openclaw-zh/dist/control-ui/index.html
    ```
 
-2. Find `</body>` tag (usually near the end of file)
+2. 找到 `</body>` 标签（通常在文件末尾）
 
-3. Insert the full content of `project-lock-patch.js` before `</body>`
+3. 在 `</body>` **之前**插入 `project-lock-patch.js` 的全部内容
 
-4. Hard refresh browser (`Cmd+Shift+R` / `Ctrl+Shift+R`)
+4. 硬刷新浏览器（`Cmd+Shift+R` / `Ctrl+Shift+R`）
 
-### Uninstall
+### 卸载
 
 ```bash
 python3 install.py --uninstall
 ```
 
-## Re-install After OpenClaw Update
+## OpenClaw 更新后重新安装
 
-`npm update -g` or `openclaw update` will overwrite `dist/control-ui/index.html` and the patch will be lost. Simply re-run:
+`npm update -g` 或 `openclaw update` 会覆盖 `dist/control-ui/index.html`，补丁会丢失。重新运行即可：
 
 ```bash
 python3 install.py
 ```
 
-## Files
+## 文件说明
 
-| File | Description |
-|------|-------------|
-| `project-lock-patch.js` | Main patch script (inject into `index.html`) |
-| `install.py` | Auto install/uninstall script |
-| `agents-rules.md` | AGENTS.md rules snippet for agent-side project lock protocol |
-| `current-project-template` | Template for `.current-project` file |
+| 文件 | 说明 |
+|------|------|
+| `project-lock-patch.js` | 主补丁脚本（注入到 `index.html`） |
+| `install.py` | 自动安装/卸载脚本 |
+| `agents-rules.md` | Agent 侧项目锁定规则（嵌入 AGENTS.md 用） |
+| `current-project-template` | `.current-project` 模板文件 |
 
-## How It Works
+## 工作原理
 
-The patch is purely injective — it doesn't modify any OpenClaw core code. It operates in two layers:
+补丁是纯注入式的，不修改任何 OpenClaw 核心代码。前后端两层配合：
 
-**Frontend (this patch):**
-- 📌 button → sends `[detect-project]` → agent replies `[Project: /path]` → auto-fills input
-- Path input box for manual lock/unlock
-- Auto-appends `[Project: /path]` tag to outgoing messages
-- WebSocket interception + DOM MutationObserver for bidirectional detection
+**前端（本补丁）：**
+- 📌 按钮点击 → 发送 `[detect-project]` → agent 回复 `[Project: /path]` → 自动填入输入框
+- 路径输入框手动锁定/解除
+- 发消息时自动追加 `[Project: /path]` 标记
+- WebSocket 拦截 + DOM MutationObserver 双向检测
 
-**Backend (agent AGENTS.md rules):**
-- Reads `.current-project` file → validates path → constrains file operations
-- Responds to `[detect-project]` with project path
-- Syncs `[Project: /path]` message tags to `.current-project`
+**后端（Agent AGENTS.md 规则）：**
+- 读取 `.current-project` 文件 → 校验路径 → 约束文件操作范围
+- 收到 `[detect-project]` 时回复项目路径
+- 收到 `[Project: /path]` 标记时同步更新 `.current-project`
 
-## Troubleshooting
+## 排查
 
-| Issue | Solution |
-|-------|----------|
-| 📌 Click does nothing | Open DevTools Console, check for errors |
-| Path detected but not filled | Console search `[ProjectLock]`, check if `Detected` fires |
-| Path disappears on agent switch | Normal — each agent stores independently, re-lock after switch |
-| White screen after injection | Check JS syntax integrity (possible truncation during copy) |
-| Patch lost after update | Re-run `python3 install.py` |
+| 问题 | 解决方案 |
+|------|----------|
+| 📌 点击后没有反应 | 打开 DevTools Console，检查是否有报错 |
+| 路径检测到了但没填入 | Console 搜 `[ProjectLock]`，确认是否触发了 `Detected` |
+| 切换 agent 后路径消失 | 正常——每个 agent 独立存储，切换后需重新锁定 |
+| 补丁注入后页面白屏 | 检查 JS 语法是否完整（可能复制时截断了 `<script>` 标签） |
+| 更新后补丁丢失 | 重新运行 `python3 install.py` |
 
-## License
+## 许可
 
 MIT

@@ -11,7 +11,7 @@ import sys
 
 # 补丁文件和目标文件路径
 PATCH_DIR = os.path.dirname(os.path.abspath(__file__))
-PATCH_FILE = os.path.join(PATCH_DIR, "project-lock-patch-v6.js")
+PATCH_FILE = os.path.join(PATCH_DIR, "project-lock-patch.js")
 
 # OpenClaw 安装路径
 OPENCLAW_DIST = "/usr/local/lib/node_modules/@qingchencloud/openclaw-zh/dist/control-ui/index.html"
