@@ -11,7 +11,7 @@
 var SK;
 var GRACE_MS = 3500;
 var graceActive = true;
-var _lockEl=null,_lockInp=null,_lockBd=null;
+var _lockEl=null,_lockInp=null,_lockBd=null,_lockIcon=null;
 
 setTimeout(function(){ graceActive = false; }, GRACE_MS);
 
@@ -103,21 +103,36 @@ function refreshUI(){
   if(_lockBd){
     if(val){
       var s=val.replace(/\\/g,'/').split('/').filter(Boolean);
-      _lockBd.textContent='\u{1F512} '+s.slice(-2).join('/');
+      _lockBd.textContent=s.slice(-2).join('/');
     }else{
       _lockBd.textContent='';
     }
   }
+  // ⑨ 切换图标 emoji
+  if(_lockIcon){
+    _lockIcon.textContent=val?'\u{1F512}':'\u{1F4CC}';
+    _lockIcon.title=val
+      ?'\u{1F512} '+val+' — 点击解除锁定'
+      :'点击自动检测项目路径';
+  }
 }
 
 // ===== 徽章更新函数（提到顶层供 scanForProjectPath 调用） =====
+// ⑨ badge 不再重复 emoji，图标状态由 ub()/refreshUI() 统一管理
 function ub(){
   if(!_lockBd||!_lockInp) return;
   if(_lockInp.value){
     var s=_lockInp.value.replace(/\\/g,'/').split('/').filter(Boolean);
-    _lockBd.textContent='\u{1F512} '+s.slice(-2).join('/');
+    _lockBd.textContent=s.slice(-2).join('/');
   }else{
     _lockBd.textContent='';
+  }
+  // ⑨ 合并 📌🔒：按钮 emoji 随锁定状态切换
+  if(_lockIcon){
+    _lockIcon.textContent=_lockInp.value?'\u{1F512}':'\u{1F4CC}';
+    _lockIcon.title=_lockInp.value
+      ?'\u{1F512} '+_lockInp.value+' — 点击解除锁定'
+      :'点击自动检测项目路径';
   }
 }
 
@@ -129,8 +144,9 @@ function mkEl(){
   w.onmouseleave=function(){w.style.opacity='0.6'};
 
   var lb=document.createElement('span');
-  lb.textContent='\u{1F4CC}';
-  lb.title='点击自动检测项目路径 \u00B7 已锁定时点击解除锁定';
+  // ⑨ 统一图标按钮：未锁定=📌，已锁定=🔒，hover 时显示完整路径
+  lb.textContent=gp()?'\u{1F512}':'\u{1F4CC}';
+  lb.title=gp()?'\u{1F512} '+gp()+' — 点击解除锁定':'点击自动检测项目路径';
   lb.style.cssText='font-size:12px;cursor:pointer;flex-shrink:0;';
   lb.onclick=function(){
     if(gp()){inp.value='';sp('');ub();return}
@@ -146,6 +162,7 @@ function mkEl(){
       else{ta.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))}
     },150);
   };
+  _lockIcon=lb; // 保存引用供 ub() 切换 emoji
 
   var inp=document.createElement('input');
   inp.type='text';
@@ -155,7 +172,8 @@ function mkEl(){
   inp.title='\u8F93\u5165\u9879\u76EE\u8DEF\u5F84\u540E\u6309 Enter \u9501\u5B9A\uFF0C\u6E05\u7A7A\u540E\u6309 Enter \u89E3\u9664';
 
   var bd=document.createElement('span');
-  bd.style.cssText='font-size:10px;white-space:nowrap;color:var(--oc-text-muted,#888);flex-shrink:0;';
+  // ⑨ badge 只显示最后两段路径，不再重复 emoji
+  bd.style.cssText='font-size:10px;white-space:nowrap;color:var(--oc-text-muted,#888);flex-shrink:0;overflow:hidden;text-overflow:ellipsis;max-width:160px;';
   ub();
   inp.onkeydown=function(e){
     if(e.key==='Enter'){e.preventDefault();e.stopPropagation();sp(inp.value);ub();inp.blur()}
@@ -163,7 +181,7 @@ function mkEl(){
   inp.onchange=function(){sp(inp.value);ub()};
 
   // 保存 UI 引用供 refreshUI() 和 scanForProjectPath() 使用
-  _lockEl=w; _lockInp=inp; _lockBd=bd;
+  _lockEl=w; _lockInp=inp; _lockBd=bd; // _lockIcon 已在上方赋值
 
   // ===== 修复 ①：链式 WebSocket 劫持（防覆盖） =====
   var _origWS=window.WebSocket;
