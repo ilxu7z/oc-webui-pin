@@ -1,12 +1,11 @@
-<!-- Project Lock UI Injection -->
-<!-- OpenClaw WebUI 项目锁定补丁 v9 -->
-<!-- 更新日期: 2026-06-06 -->
-<!-- 注入位置: dist/control-ui/index.html 的 </body> 标签前 -->
-<!-- 功能: 聊天输入框下方的 📌 项目路径锁定 UI -->
-<!-- v7 修复: ①Shadow DOM 穿透（openclaw-app shadowRoot MutationObserver） -->
-<!--          ②WS 劫持增加 debug 日志 ③备用轮询 fallback ④DOMContentLoaded 时二次 attach -->
-<script>
-// OpenClaw WebUI 项目锁定 v9 — session 维度隔离（修复 agent 维度 key 碰撞）
+// OpenClaw WebUI 项目锁定补丁 v10 — session 维度隔离
+// 更新日期: 2026-06-06
+// 注入位置: dist/control-ui/index.html 的 </body> 标签前
+// 功能: 聊天输入框下方的 📌 项目路径锁定 UI
+// v10: ①纯 JS 文件（不再含 <script> 标签）
+//      ②移除重复的 badge span（input 已显示路径）
+//      ③Shadow DOM 穿透 + WS 劫持 + DOMContentLoaded 二次 attach
+// v9 core: session 维度隔离 — localStorage key 从 agent name 改为 sessionKey
 (function(){'use strict';
 var SK;
 var GRACE_MS = 3500;
@@ -483,5 +482,3 @@ if(document.readyState==='loading'){
   waitApp();
 }
 })();
-</script>
-<!-- End Project Lock UI Injection -->
