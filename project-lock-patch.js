@@ -1,12 +1,12 @@
 <!-- Project Lock UI Injection -->
-<!-- OpenClaw WebUI 项目锁定补丁 v8 -->
-<!-- 更新日期: 2026-06-03 -->
+<!-- OpenClaw WebUI 项目锁定补丁 v9 -->
+<!-- 更新日期: 2026-06-06 -->
 <!-- 注入位置: dist/control-ui/index.html 的 </body> 标签前 -->
 <!-- 功能: 聊天输入框下方的 📌 项目路径锁定 UI -->
 <!-- v7 修复: ①Shadow DOM 穿透（openclaw-app shadowRoot MutationObserver） -->
 <!--          ②WS 劫持增加 debug 日志 ③备用轮询 fallback ④DOMContentLoaded 时二次 attach -->
 <script>
-// OpenClaw WebUI 项目锁定 v8 — 流式渲染检测修复 + Shadow DOM characterData
+// OpenClaw WebUI 项目锁定 v9 — session 维度隔离（修复 agent 维度 key 碰撞）
 (function(){'use strict';
 var SK;
 var GRACE_MS = 3500;
@@ -16,24 +16,21 @@ var _lockEl=null,_lockInp=null,_lockBd=null,_lockIcon=null;
 setTimeout(function(){ graceActive = false; }, GRACE_MS);
 
 function agentKey(){
-  var m=location.search.match(/agent[=:]([^&]+)/)||location.hash.match(/agent[=:]([^&]+)/);
-  var p=location.pathname.match(/agent\/([^/]+)/);
-  var name=(m&&m[1])||(p&&p[1])||'main';
-  // 解析 session 参数（格式 sessionId:agentName）
-  var s=location.search.match(/session=([^&]+)/);
-  var sessionId='';
+  // v9 修复：session 维度而非 agent 维度
+  // WebUI URL 格式: ?session=<sessionKey>（sessionKey = main/subagent-xxx/session:xxx）
+  // 同一 agent 下不同会话窗口应独立锁定
+  var s=location.search.match(/session=([^&]+)/)||location.hash.match(/session=([^&]+)/);
   if(s){
     try{
       var d=decodeURIComponent(s[1]);
-      var parts=d.split(':');
-      sessionId=parts[0]||'';
-      if(parts.length>=2&&parts[1].length>0){name=parts[1]}
+      return 'openclaw_project_lock_'+d.replace(/[^a-zA-Z0-9_.:-]/g,'_');
     }catch(e){}
   }
-  // ⑩ session 维度：每个 session 独立锁定，不跨 session 共享
-  var key='openclaw_project_lock_'+name.replace(/[^a-zA-Z0-9_-]/g,'_');
-  if(sessionId){key+='_'+sessionId.replace(/[^a-zA-Z0-9_-]/g,'_')}
-  return key;
+  // 无 session 参数时回退到 agent name
+  var m=location.search.match(/agent[=:]([^&]+)/)||location.hash.match(/agent[=:]([^&]+)/);
+  var p=location.pathname.match(/agent\/([^/]+)/);
+  var name=(m&&m[1])||(p&&p[1])||'main';
+  return 'openclaw_project_lock_'+name.replace(/[^a-zA-Z0-9_-]/g,'_');
 }
 function resetSK(){ SK = null; }
 function gp(){if(!SK)SK=agentKey();try{return localStorage.getItem(SK)||''}catch(e){return ''}}
