@@ -70,10 +70,13 @@ function onUrlChange(){
   _lastHref = location.href;
   resetSK();
   var newSK = agentKey();
-  if(oldSK !== newSK){
-    console.log('[ProjectLock] Agent changed:', oldSK, '->', newSK);
-    refreshUI();
-  }
+  console.log('[ProjectLock] URL changed:', oldSK, '->', newSK);
+  // v9 修复：SPA 导航时 Shadow DOM 内工具栏被重建，_lockEl 等引用失效
+  // 必须移除旧元素标记，强制重新插入 UI
+  _plInserted = false;
+  _lockEl = null; _lockInp = null; _lockBd = null; _lockIcon = null;
+  // 延迟重建，等 WebUI 渲染完成
+  setTimeout(function(){ tryInsert(); }, 300);
 }
 
 history.pushState = function(){
@@ -422,8 +425,27 @@ for(var i=0;i<taList.length;i++){
 // Wait for toolbar, then insert
 var _plInserted=false;
 function tryInsert(){
-  if(document.getElementById('openclaw-project-lock')) return true;
+  if(_lockEl && document.contains(_lockEl)) return true; // UI 仍有效
+  _plInserted = false;
+  _lockEl = null; _lockInp = null; _lockBd = null; _lockIcon = null;
+  // 尝试 light DOM
   var tb=document.querySelector('.agent-chat__toolbar');
+  // 尝试 Shadow DOM（openclaw-app 或嵌套 shadow）
+  if(!tb){
+    var app=document.querySelector('openclaw-app');
+    if(app&&app.shadowRoot){
+      tb=app.shadowRoot.querySelector('.agent-chat__toolbar');
+      if(!tb){
+        var nested=app.shadowRoot.querySelectorAll('*');
+        for(var i=0;i<nested.length;i++){
+          if(nested[i].shadowRoot){
+            tb=nested[i].shadowRoot.querySelector('.agent-chat__toolbar');
+            if(tb) break;
+          }
+        }
+      }
+    }
+  }
   if(!tb) return false;
   var btns=tb.querySelectorAll('.agent-chat__input-btn');
   if(btns.length){btns[btns.length-1].after(mkEl())}
@@ -440,12 +462,20 @@ function waitToolbar(){
     }
   });
   ob.observe(document.body,{childList:true,subtree:true});
-  // 优化 ⑥：SPA 轮询间隔从 3s 提升到 5s（降低 CPU 开销）
+  // 优化 ⑥：SPA 轮询间隔从 3s 提升到 2s
+  // v9：WebUI Shadow DOM 导航不触发 body mutation，需轮询兜底
   setInterval(function(){
-    if(!document.getElementById('openclaw-project-lock')&&document.querySelector('.agent-chat__toolbar')){
+    // 检查现有 UI 元素是否已脱离 DOM（悬空引用）
+    if(_lockEl && !document.contains(_lockEl)){
+      console.log('[ProjectLock] UI detached, re-inserting');
+      _plInserted = false;
+      _lockEl = null; _lockInp = null; _lockBd = null; _lockIcon = null;
       tryInsert();
+      return;
     }
-  },5000);
+    // 定期尝试重新插入（SPA 导航兜底）
+    if(!_lockEl){ tryInsert(); }
+  },2000);
 }
 
 // Wait for app mount
