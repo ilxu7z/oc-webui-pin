@@ -1,12 +1,12 @@
-      <!-- Project Lock UI Injection (v12) -->
-<!-- Agent为Source of Truth，前端通过协议命令双向同步 -->
+        <!-- Project Lock UI Injection (v13) -->
+<!-- 标记携带会话ID，WS过滤跨会话串扰 -->
 <script>
 (function(){'use strict';
 var SK;
 var GRACE_MS = 3500;
 var graceActive = true;
 var _lockEl=null,_lockInp=null,_lockIcon=null;
-var _pendingLockPath=null; // 等待 Agent 确认的路径
+var _pendingLockPath=null;
 
 setTimeout(function(){ graceActive = false; }, GRACE_MS);
 
@@ -15,21 +15,24 @@ function getCurrentSessionKey(){
   var sel=document.querySelector('[data-chat-session-picker-option][aria-selected="true"]');
   if(sel){
     var key=sel.getAttribute('data-session-key');
-    if(key) return 'openclaw_project_lock_'+key.replace(/[^a-zA-Z0-9_.:-]/g,'_');
+    if(key) return key;
   }
   var s=location.search.match(/session=([^&]+)/)||location.hash.match(/session=([^&]+)/);
   if(s){
-    try{var d=decodeURIComponent(s[1]);return 'openclaw_project_lock_'+d.replace(/[^a-zA-Z0-9_.:-]/g,'_');}catch(e){}
+    try{return decodeURIComponent(s[1]);}catch(e){}
   }
   var m=location.search.match(/agent[=:]([^&]+)/)||location.hash.match(/agent[=:]([^&]+)/);
   var p=location.pathname.match(/agent\/([^/]+)/);
-  var name=(m&&m[1])||(p&&p[1])||'main';
-  return 'openclaw_project_lock_'+name.replace(/[^a-zA-Z0-9_-]/g,'_');
+  return (m&&m[1])||(p&&p[1])||'main';
+}
+function getLocalStorageKey(){
+  var key=getCurrentSessionKey();
+  return 'openclaw_project_lock_'+key.replace(/[^a-zA-Z0-9_.:-]/g,'_');
 }
 function resetSK(){ SK = null; }
-function gp(){if(!SK)SK=getCurrentSessionKey();try{return localStorage.getItem(SK)||''}catch(e){return ''}}
-function sp(p){if(!SK)SK=getCurrentSessionKey();try{localStorage.setItem(SK,p)}catch(e){}}
-function rp(){if(!SK)SK=getCurrentSessionKey();try{localStorage.removeItem(SK)}catch(e){}}
+function gp(){if(!SK)SK=getLocalStorageKey();try{return localStorage.getItem(SK)||''}catch(e){return ''}}
+function sp(p){if(!SK)SK=getLocalStorageKey();try{localStorage.setItem(SK,p)}catch(e){}}
+function rp(){if(!SK)SK=getLocalStorageKey();try{localStorage.removeItem(SK)}catch(e){}}
 
 // ===== 路径校验 =====
 function isValidPath(p){return /^[\/~]|[A-Za-z]:[\\\/]/.test(p)}
@@ -45,7 +48,6 @@ function sendToAgent(text){
   ns.call(ta,text);
   ta.dispatchEvent(new Event('input',{bubbles:true}));
   ta.focus();
-  // 触发发送
   setTimeout(function(){
     var sb=root.querySelector('.chat-send-btn');
     if(sb&&!sb.disabled){sb.click();return;}
@@ -54,41 +56,56 @@ function sendToAgent(text){
   return true;
 }
 
+// ===== 标记解析：格式为 [TYPE: sessionKey::value] =====
+// 只处理匹配当前会话的标记，防止跨 Tab 串扰
+function parseMarker(text, type){
+  var re=new RegExp('\\['+type+':\\s*([^\\]]+)\\]');
+  var m=text.match(re);
+  if(!m||!m[1]) return null;
+  var inner=m[1].trim();
+  // 格式: sessionKey::value  或  sessionKey (无 value)
+  var sep=inner.indexOf('::');
+  if(sep<0){
+    // 无 :: 分隔，整个作为 sessionKey（如 [LockCleared: main]）
+    return {sessionKey:inner, value:''};
+  }
+  return {
+    sessionKey:inner.slice(0,sep).trim(),
+    value:inner.slice(sep+2).trim()
+  };
+}
+
 // ===== 扫描协议标记 =====
 function scanForMarkers(text){
   if(graceActive) return false;
   if(!text||typeof text!=='string') return false;
+  var currentSession=getCurrentSessionKey();
   var changed=false;
 
-  // [LockConfirmed: /path] — Agent 确认锁定
-  var lc=text.match(/\[LockConfirmed:\s*([^\]]+)\]/);
-  if(lc&&lc[1]){
-    var pp=lc[1].trim();
-    if(isValidPath(pp)){
-      sp(pp);
-      _pendingLockPath=null;
-      changed=true;
-      console.log('[ProjectLock] Lock confirmed:', pp);
-    }
+  // [LockConfirmed: sessionKey::/path] — Agent 确认锁定
+  var lc=parseMarker(text,'LockConfirmed');
+  if(lc && lc.sessionKey===currentSession && isValidPath(lc.value)){
+    sp(lc.value);
+    _pendingLockPath=null;
+    changed=true;
+    console.log('[ProjectLock] Lock confirmed for', currentSession, ':', lc.value);
   }
 
-  // [LockCleared] — Agent 确认解锁
-  if(text.indexOf('[LockCleared]')>=0){
+  // [LockCleared: sessionKey] — Agent 确认解锁
+  var clr=parseMarker(text,'LockCleared');
+  if(clr && clr.sessionKey===currentSession){
     rp();
     _pendingLockPath=null;
     changed=true;
-    console.log('[ProjectLock] Lock cleared');
+    console.log('[ProjectLock] Lock cleared for', currentSession);
   }
 
-  // [Project: /path] — Agent 返回检测到的路径
-  var pm=text.match(/\[Project:\s*([^\]]+)\]/);
-  if(pm&&pm[1]){
-    var pp2=pm[1].trim();
-    if(pp2.length>5&&isValidPath(pp2)&&pp2!==gp()){
-      sp(pp2);
-      changed=true;
-      console.log('[ProjectLock] Detected:', pp2);
-    }
+  // [Project: sessionKey::/path] — Agent 返回检测到的路径
+  var pm=parseMarker(text,'Project');
+  if(pm && pm.sessionKey===currentSession && isValidPath(pm.value) && pm.value!==gp()){
+    sp(pm.value);
+    changed=true;
+    console.log('[ProjectLock] Detected for', currentSession, ':', pm.value);
   }
 
   if(changed) updateUI();
@@ -153,7 +170,7 @@ var _lastHref=location.href;
 function onUrlChange(){
   if(location.href===_lastHref) return;
   _lastHref=location.href; resetSK();
-  _lockEl=null;_lockInp=null;_lockIcon=null;ll;
+  _lockEl=null;_lockInp=null;_lockIcon=null;
   setTimeout(function(){tryInsert();},300);
 }
 history.pushState=function(){var r=_origPushState.apply(this,arguments);onUrlChange();return r;};
@@ -162,16 +179,16 @@ window.addEventListener('popstate',function(){_lastHref=location.href;resetSK();
 
 // ===== UI 更新 =====
 function getStatus(){
-  if(_pendingLockPath) return 'pending';  // 🔄 等待确认
+  if(_pendingLockPath) return 'pending';
   var val=gp();
-  if(val) return 'locked';                // 🔒 已锁定
-  return 'unlocked';                      // 📌 未锁定
+  if(val) return 'locked';
+  return 'unlocked';
 }
 function getStatusIcon(status){
   switch(status){
-    case 'pending': return '\u{1F504}';   // 🔄
-    case 'locked': return '\u{1F512}';    // 🔒
-    default: return '\u{1F4CC}';          // 📌
+    case 'pending': return '\u{1F504}';
+    case 'locked': return '\u{1F512}';
+    default: return '\u{1F4CC}';
   }
 }
 function getStatusTitle(status){
@@ -189,7 +206,6 @@ function getStatusColor(status){
     default: return '';
   }
 }
-
 function updateUI(){
   if(!_lockInp||!_lockIcon) return;
   var status=getStatus();
@@ -198,7 +214,7 @@ function updateUI(){
   _lockIcon.textContent=getStatusIcon(status);
   _lockIcon.title=getStatusTitle(status);
   _lockIcon.style.color=getStatusColor(status);
-  }
+}
 function refreshUI(){updateUI();}
 
 // ===== 捕获响应中的标记（MutationObserver） =====
@@ -223,7 +239,7 @@ function createResponseObserver(root){
 // ===== 监听会话切换 =====
 function watchSessionSwitch(root){
   var obs=new MutationObserver(function(){
-    var newKey=getCurrentSessionKey();
+    var newKey=getLocalStorageKey();
     if(newKey!==SK){
       console.log('[ProjectLock] Session switched, new key:', newKey);
       SK=newKey;
@@ -252,15 +268,13 @@ function mkEl(){
 
   lb.onclick=function(){
     var status=getStatus();
-    if(status==='pending') return; // 等待中不可操作
+    if(status==='pending') return;
     if(status==='locked'){
-      // 解锁：发送 [unlock] 命令
       _pendingLockPath='__unlocking__';
       updateUI();
       sendToAgent('[unlock]');
       return;
     }
-    // 未锁定：发送 [detect-project]
     sendToAgent('[detect-project]');
   };
 
@@ -276,31 +290,24 @@ function mkEl(){
       e.preventDefault();e.stopPropagation();
       var path=inp.value.trim();
       if(!path){
-        // 空路径 = 解锁
         _pendingLockPath='__unlocking__';
         updateUI();
         sendToAgent('[unlock]');
       }else if(isValidPath(path)){
-        // 发送锁定命令
         _pendingLockPath=path;
         updateUI();
         sendToAgent('[lock: '+path+']');
       }else{
-        // 无效路径，直接存 localStorage 作为本地缓存
         sp(path);
         updateUI();
       }
       inp.blur();
     }
   };
-  inp.onchange=function(){/* 不再直接存，必须通过 Agent 确认 */};
 
   _lockEl=w;_lockInp=inp;
+  updateUI();
 
-  // 状态标签
-      updateUI();
-
-  // 监听响应标记
   createResponseObserver(document.querySelector('openclaw-app')?.shadowRoot||document.querySelector('openclaw-app')||document.body);
   document.addEventListener('DOMContentLoaded',function(){
     setTimeout(function(){
@@ -309,7 +316,6 @@ function mkEl(){
     },500);
   });
 
-  // 监听会话切换
   (function(){
     var app=document.querySelector('openclaw-app');
     if(app){
@@ -320,13 +326,13 @@ function mkEl(){
 
   w.appendChild(lb);
   w.appendChild(inp);
-    return w;
+  return w;
 }
 
 // ===== 插入 UI =====
 function tryInsert(){
   if(_lockEl&&document.contains(_lockEl)) return true;
-  _lockEl=null;_lockInp=null;_lockIcon=null;ll;
+  _lockEl=null;_lockInp=null;_lockIcon=null;
   var app=document.querySelector('openclaw-app');
   if(!app) return false;
   var root=app.shadowRoot||app;
@@ -354,7 +360,7 @@ setTimeout(function(){_bodyObs.disconnect();},20000);
 
 setInterval(function(){
   if(_lockEl&&!document.contains(_lockEl)){
-    _lockEl=null;_lockInp=null;_lockIcon=null;ll;
+    _lockEl=null;_lockInp=null;_lockIcon=null;
     tryInsert();
   }
 },2000);
