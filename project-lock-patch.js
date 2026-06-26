@@ -170,7 +170,7 @@ var _lastHref=location.href;
 function onUrlChange(){
   if(location.href===_lastHref) return;
   _lastHref=location.href; resetSK();
-  _lockEl=null;_lockInp=null;_lockIcon=null;
+  // 不 null 化引用，让 tryInsert 先检查 document.contains
   setTimeout(function(){tryInsert();},300);
 }
 history.pushState=function(){var r=_origPushState.apply(this,arguments);onUrlChange();return r;};
@@ -332,6 +332,8 @@ function mkEl(){
 // ===== 插入 UI =====
 function tryInsert(){
   if(_lockEl&&document.contains(_lockEl)) return true;
+  // 清理所有残留的旧组件，防止会话切换时堆积
+  document.querySelectorAll('#openclaw-project-lock').forEach(function(el){el.remove();});
   _lockEl=null;_lockInp=null;_lockIcon=null;
   var app=document.querySelector('openclaw-app');
   if(!app) return false;
@@ -359,7 +361,14 @@ _bodyObs.observe(document.body,{childList:true,subtree:true});
 setTimeout(function(){_bodyObs.disconnect();},20000);
 
 setInterval(function(){
-  if(_lockEl&&!document.contains(_lockEl)){
+  // 检查是否有残留或重复组件
+  var all=document.querySelectorAll('#openclaw-project-lock');
+  if(all.length>1){
+    // 有重复，清理后重建
+    all.forEach(function(el){el.remove();});
+    _lockEl=null;_lockInp=null;_lockIcon=null;
+    tryInsert();
+  }else if(_lockEl&&!document.contains(_lockEl)){
     _lockEl=null;_lockInp=null;_lockIcon=null;
     tryInsert();
   }
