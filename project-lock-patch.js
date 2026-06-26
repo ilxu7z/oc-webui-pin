@@ -152,15 +152,17 @@ document.addEventListener('keydown',function(e){
 // ===== 发送按钮 Shadow DOM 穿透 =====
 function getShadowSendBtn(){
   var app=document.querySelector('openclaw-app');
-  if(!app||!app.shadowRoot) return null;
-  return app.shadowRoot.querySelector('.chat-send-btn');
+  if(!app) return null;
+  var root=app.shadowRoot||app;
+  return root.querySelector('.chat-send-btn');
 }
 function triggerSend(){
   var sb=getShadowSendBtn();
   if(sb&&!sb.disabled){sb.click();return true;}
   var app=document.querySelector('openclaw-app');
-  if(app&&app.shadowRoot){
-    var ta=app.shadowRoot.querySelector('textarea');
+  if(app){
+    var root=app.shadowRoot||app;
+    var ta=root.querySelector('textarea');
     if(ta){ta.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));return true;}
   }
   return false;
@@ -183,8 +185,9 @@ function mkEl(){
   lb.onclick=function(){
     if(gp()){inp.value='';sp('');ub();return}
     var app=document.querySelector('openclaw-app');
-    if(!app||!app.shadowRoot) return;
-    var ta=app.shadowRoot.querySelector('textarea');
+    if(!app) return;
+    var root=app.shadowRoot||app;
+    var ta=root.querySelector('textarea');
     if(!ta) return;
     var ns=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set;
     ns.call(ta,'[detect-project]');
@@ -212,8 +215,9 @@ function mkEl(){
   var scanTimer=null;
   function createShadowObserver(){
     var app=document.querySelector('openclaw-app');
-    if(!app||!app.shadowRoot) return false;
-    console.log('[ProjectLock] Shadow DOM observer attached');
+    if(!app) return false;
+    var root=app.shadowRoot||app;
+    console.log('[ProjectLock] observer attached, root type:', app.shadowRoot?'shadow':'light');
     var obs=new MutationObserver(function(){
       if(graceActive||scanTimer) return;
       scanTimer=setTimeout(function(){
@@ -227,7 +231,7 @@ function mkEl(){
         }
       },500);
     });
-    obs.observe(app.shadowRoot,{childList:true,subtree:true,characterData:true});
+    obs.observe(root,{childList:true,subtree:true,characterData:true});
     return true;
   }
   createShadowObserver();
@@ -243,13 +247,15 @@ function tryInsert(){
   if(_lockEl&&document.contains(_lockEl)) return true;
   _lockEl=null;_lockInp=null;_lockIcon=null;
   var app=document.querySelector('openclaw-app');
-  if(!app||!app.shadowRoot){
-    console.log('[ProjectLock] tryInsert: no app or shadowRoot yet');
+  if(!app){
+    console.log('[ProjectLock] tryInsert: openclaw-app NOT FOUND');
     return false;
   }
-  var tb=app.shadowRoot.querySelector('.agent-chat__toolbar');
+  // openclaw-app uses createRenderRoot(){return this} — Light DOM, not Shadow DOM
+  var root=app.shadowRoot||app;
+  var tb=root.querySelector('.agent-chat__toolbar');
   if(!tb){
-    console.log('[ProjectLock] tryInsert: no toolbar in shadowRoot');
+    console.log('[ProjectLock] tryInsert: toolbar not found, root children:', root.children.length);
     return false;
   }
   var btns=tb.querySelectorAll('.agent-chat__input-btn');
