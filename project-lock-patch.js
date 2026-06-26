@@ -1,33 +1,26 @@
-    <!-- Project Lock UI Injection (v11.4) -->
-<!-- 改为会话维度: localStorage key 基于当前 sessionKey，监听会话切换自动更新 -->
+      <!-- Project Lock UI Injection (v12) -->
+<!-- Agent为Source of Truth，前端通过协议命令双向同步 -->
 <script>
 (function(){'use strict';
 var SK;
 var GRACE_MS = 3500;
 var graceActive = true;
-var _lockEl=null,_lockInp=null,_lockIcon=null;
+var _lockEl=null,_lockInp=null,_lockIcon=null,_lockStatus=null;
+var _pendingLockPath=null; // 等待 Agent 确认的路径
 
 setTimeout(function(){ graceActive = false; }, GRACE_MS);
 
 // ===== 会话维度 localStorage key =====
-// 优先从 DOM 获取当前选中的 sessionKey（支持会话切换后自动更新）
-// 回退到 URL session 参数 → agent 参数 → 'main'
 function getCurrentSessionKey(){
-  // 1. 从 session picker 的选中项获取（最准确，会话切换后立即生效）
   var sel=document.querySelector('[data-chat-session-picker-option][aria-selected="true"]');
   if(sel){
     var key=sel.getAttribute('data-session-key');
     if(key) return 'openclaw_project_lock_'+key.replace(/[^a-zA-Z0-9_.:-]/g,'_');
   }
-  // 2. 从 URL session 参数获取
   var s=location.search.match(/session=([^&]+)/)||location.hash.match(/session=([^&]+)/);
   if(s){
-    try{
-      var d=decodeURIComponent(s[1]);
-      return 'openclaw_project_lock_'+d.replace(/[^a-zA-Z0-9_.:-]/g,'_');
-    }catch(e){}
+    try{var d=decodeURIComponent(s[1]);return 'openclaw_project_lock_'+d.replace(/[^a-zA-Z0-9_.:-]/g,'_');}catch(e){}
   }
-  // 3. 回退到 agent 维度
   var m=location.search.match(/agent[=:]([^&]+)/)||location.hash.match(/agent[=:]([^&]+)/);
   var p=location.pathname.match(/agent\/([^/]+)/);
   var name=(m&&m[1])||(p&&p[1])||'main';
@@ -36,27 +29,70 @@ function getCurrentSessionKey(){
 function resetSK(){ SK = null; }
 function gp(){if(!SK)SK=getCurrentSessionKey();try{return localStorage.getItem(SK)||''}catch(e){return ''}}
 function sp(p){if(!SK)SK=getCurrentSessionKey();try{localStorage.setItem(SK,p)}catch(e){}}
-var TP='\n[Project: ',TS=']';
+function rp(){if(!SK)SK=getCurrentSessionKey();try{localStorage.removeItem(SK)}catch(e){}}
 
-// ===== 路径扫描 =====
+// ===== 路径校验 =====
 function isValidPath(p){return /^[\/~]|[A-Za-z]:[\\\/]/.test(p)}
-function scanForProjectPath(text){
+
+// ===== 发送命令到 Agent =====
+function sendToAgent(text){
+  var app=document.querySelector('openclaw-app');
+  if(!app) return false;
+  var root=app.shadowRoot||app;
+  var ta=root.querySelector('textarea');
+  if(!ta) return false;
+  var ns=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set;
+  ns.call(ta,text);
+  ta.dispatchEvent(new Event('input',{bubbles:true}));
+  ta.focus();
+  // 触发发送
+  setTimeout(function(){
+    var sb=root.querySelector('.chat-send-btn');
+    if(sb&&!sb.disabled){sb.click();return;}
+    ta.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
+  },100);
+  return true;
+}
+
+// ===== 扫描协议标记 =====
+function scanForMarkers(text){
   if(graceActive) return false;
   if(!text||typeof text!=='string') return false;
-  var mm=text.match(/\[Project:\s*([^\]]+)\]/);
-  if(mm&&mm[1]){
-    var pp=mm[1].trim();
-    if(pp.length>5&&isValidPath(pp)&&pp!==gp()){
-      if(_lockInp){
-        _lockInp.value=pp;
-        sp(pp);
-        ub();
-      }
-      console.log('[ProjectLock] Detected:', pp);
-      return true;
+  var changed=false;
+
+  // [LockConfirmed: /path] — Agent 确认锁定
+  var lc=text.match(/\[LockConfirmed:\s*([^\]]+)\]/);
+  if(lc&&lc[1]){
+    var pp=lc[1].trim();
+    if(isValidPath(pp)){
+      sp(pp);
+      _pendingLockPath=null;
+      changed=true;
+      console.log('[ProjectLock] Lock confirmed:', pp);
     }
   }
-  return false;
+
+  // [LockCleared] — Agent 确认解锁
+  if(text.indexOf('[LockCleared]')>=0){
+    rp();
+    _pendingLockPath=null;
+    changed=true;
+    console.log('[ProjectLock] Lock cleared');
+  }
+
+  // [Project: /path] — Agent 返回检测到的路径
+  var pm=text.match(/\[Project:\s*([^\]]+)\]/);
+  if(pm&&pm[1]){
+    var pp2=pm[1].trim();
+    if(pp2.length>5&&isValidPath(pp2)&&pp2!==gp()){
+      sp(pp2);
+      changed=true;
+      console.log('[ProjectLock] Detected:', pp2);
+    }
+  }
+
+  if(changed) updateUI();
+  return changed;
 }
 
 // ===== WS 劫持 =====
@@ -69,7 +105,7 @@ function scanForProjectPath(text){
       if(type==='message'){
         var wrapped=function(event){
           var data=typeof event.data==='string'?event.data:(event.data&&event.data.toString?event.data.toString():'');
-          scanForProjectPath(data);
+          scanForMarkers(data);
           return listener.call(this,event);
         };
         return _origAdd.call(ws,type,wrapped,opts);
@@ -85,7 +121,7 @@ function scanForProjectPath(text){
           if(typeof fn==='function'){
             var wrapped=function(event){
               var data=typeof event.data==='string'?event.data:(event.data&&event.data.toString?event.data.toString():'');
-              scanForProjectPath(data);
+              scanForMarkers(data);
               return fn.call(this,event);
             };
             ws._plOrigOnMsg=wrapped;
@@ -117,78 +153,83 @@ var _lastHref=location.href;
 function onUrlChange(){
   if(location.href===_lastHref) return;
   _lastHref=location.href; resetSK();
-  _lockEl=null;_lockInp=null;_lockIcon=null;
+  _lockEl=null;_lockInp=null;_lockIcon=null;_lockStatus=null;
   setTimeout(function(){tryInsert();},300);
 }
 history.pushState=function(){var r=_origPushState.apply(this,arguments);onUrlChange();return r;};
 history.replaceState=function(){var r=_origReplaceState.apply(this,arguments);onUrlChange();return r;};
 window.addEventListener('popstate',function(){_lastHref=location.href;resetSK();refreshUI();});
 
-function refreshUI(){
-  if(!_lockInp) return;
+// ===== UI 更新 =====
+function getStatus(){
+  if(_pendingLockPath) return 'pending';  // 🔄 等待确认
   var val=gp();
-  _lockInp.value=val;
-  if(_lockIcon){
-    _lockIcon.textContent=val?'\u{1F512}':'\u{1F4CC}';
-    _lockIcon.title=val?'\u{1F512} '+val+' — 点击解除锁定':'点击自动检测项目路径';
+  if(val) return 'locked';                // 🔒 已锁定
+  return 'unlocked';                      // 📌 未锁定
+}
+function getStatusIcon(status){
+  switch(status){
+    case 'pending': return '\u{1F504}';   // 🔄
+    case 'locked': return '\u{1F512}';    // 🔒
+    default: return '\u{1F4CC}';          // 📌
   }
 }
-function ub(){
-  if(!_lockInp) return;
-  if(_lockIcon){
-    _lockIcon.textContent=_lockInp.value?'\u{1F512}':'\u{1F4CC}';
-    _lockIcon.title=_lockInp.value?'\u{1F512} '+_lockInp.value+' — 点击解除锁定':'点击自动检测项目路径';
+function getStatusTitle(status){
+  var val=gp();
+  switch(status){
+    case 'pending': return '\u{1F504} \u7B49\u5F85 Agent \u786E\u8BA4... ('+_pendingLockPath+')';
+    case 'locked': return '\u{1F512} '+val+' \u2014 \u70B9\u51FB\u89E3\u9664\u9501\u5B9A';
+    default: return '\u70B9\u51FB\u81EA\u52A8\u68C0\u6D4B\u9879\u76EE\u8DEF\u5F84';
+  }
+}
+function getStatusColor(status){
+  switch(status){
+    case 'pending': return 'var(--oc-warning,#f59e0b)';
+    case 'locked': return 'var(--oc-success,#22c55e)';
+    default: return '';
   }
 }
 
-// ===== capture-phase keydown =====
-function injectTag(ta){
-  var pp=gp();
-  if(!pp||!ta.value) return;
-  if(ta.value==='[detect-project]') return;
-  var tag=TP+pp+TS;
-  if(ta.value.indexOf('[Project: ')>=0){
-    ta.value=ta.value.replace(/\[Project: [^\]]*\]/,tag);
-  }else{
-    ta.value=ta.value+tag;
-  }
+function updateUI(){
+  if(!_lockInp||!_lockIcon) return;
+  var status=getStatus();
+  var val=gp();
+  _lockInp.value=_pendingLockPath||val;
+  _lockIcon.textContent=getStatusIcon(status);
+  _lockIcon.title=getStatusTitle(status);
+  _lockIcon.style.color=getStatusColor(status);
+  if(_lockStatus) _lockStatus.textContent=status==='pending'?'\u786E\u8BA4\u4E2D...':(status==='locked'?'\u5DF2\u9501\u5B9A':'\u672A\u9501\u5B9A');
 }
-document.addEventListener('keydown',function(e){
-  var ta=e.target;
-  if(ta.tagName!=='TEXTAREA') return;
-  var isSend=e.key==='Enter'&&!e.shiftKey&&!e.ctrlKey&&!e.metaKey;
-  var isCtrlSend=e.key==='Enter'&&(e.ctrlKey||e.metaKey);
-  if(isSend||isCtrlSend) injectTag(ta);
-},true);
+function refreshUI(){updateUI();}
 
-// ===== 发送按钮 Light DOM 穿透 =====
-function getLightSendBtn(){
-  var app=document.querySelector('openclaw-app');
-  if(!app) return null;
-  var root=app.shadowRoot||app;
-  return root.querySelector('.chat-send-btn');
-}
-function triggerSend(){
-  var sb=getLightSendBtn();
-  if(sb&&!sb.disabled){sb.click();return true;}
-  var app=document.querySelector('openclaw-app');
-  if(app){
-    var root=app.shadowRoot||app;
-    var ta=root.querySelector('textarea');
-    if(ta){ta.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));return true;}
-  }
-  return false;
+// ===== 捕获响应中的标记（MutationObserver） =====
+function createResponseObserver(root){
+  var scanTimer=null;
+  var obs=new MutationObserver(function(){
+    if(graceActive||scanTimer) return;
+    scanTimer=setTimeout(function(){
+      scanTimer=null;
+      var bubbles=root.querySelectorAll('.chat-bubble:not(.chat-reading-indicator)');
+      for(var i=0;i<bubbles.length;i++){
+        var el=bubbles[i];
+        if(el.dataset.plDone) continue;
+        var html=el.innerHTML||'',raw=el.textContent||'';
+        if(scanForMarkers(html)||scanForMarkers(raw)){el.dataset.plDone='1';return;}
+      }
+    },500);
+  });
+  obs.observe(root,{childList:true,subtree:true,characterData:true});
 }
 
 // ===== 监听会话切换 =====
-// 当用户通过 picker 切换会话时，自动更新 localStorage key 和 UI
 function watchSessionSwitch(root){
   var obs=new MutationObserver(function(){
     var newKey=getCurrentSessionKey();
     if(newKey!==SK){
       console.log('[ProjectLock] Session switched, new key:', newKey);
       SK=newKey;
-      refreshUI();
+      _pendingLockPath=null;
+      updateUI();
     }
   });
   obs.observe(root,{childList:true,subtree:true,attributes:true,attributeFilter:['aria-selected']});
@@ -203,23 +244,25 @@ function mkEl(){
   w.onmouseleave=function(){w.style.opacity='0.6'};
 
   var lb=document.createElement('span');
-  lb.textContent=gp()?'\u{1F512}':'\u{1F4CC}';
-  lb.title=gp()?'\u{1F512} '+gp()+' — 点击解除锁定':'点击自动检测项目路径';
+  var status=getStatus();
+  lb.textContent=getStatusIcon(status);
+  lb.title=getStatusTitle(status);
   lb.style.cssText='font-size:12px;cursor:pointer;flex-shrink:0;';
+  lb.style.color=getStatusColor(status);
   _lockIcon=lb;
 
   lb.onclick=function(){
-    if(gp()){inp.value='';sp('');ub();return}
-    var app=document.querySelector('openclaw-app');
-    if(!app) return;
-    var root=app.shadowRoot||app;
-    var ta=root.querySelector('textarea');
-    if(!ta) return;
-    var ns=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set;
-    ns.call(ta,'[detect-project]');
-    ta.dispatchEvent(new Event('input',{bubbles:true}));
-    ta.focus();
-    setTimeout(function(){triggerSend();},150);
+    var status=getStatus();
+    if(status==='pending') return; // 等待中不可操作
+    if(status==='locked'){
+      // 解锁：发送 [unlock] 命令
+      _pendingLockPath='__unlocking__';
+      updateUI();
+      sendToAgent('[unlock]');
+      return;
+    }
+    // 未锁定：发送 [detect-project]
+    sendToAgent('[detect-project]');
   };
 
   var inp=document.createElement('input');
@@ -227,41 +270,48 @@ function mkEl(){
   inp.placeholder='\u9879\u76EE\u8DEF\u5F84';
   inp.value=gp();
   inp.style.cssText='width:140px;min-width:60px;background:transparent;border:1px solid var(--oc-border,rgba(128,128,128,0.2));border-radius:4px;padding:2px 6px;color:inherit;font-size:11px;outline:none;flex-shrink:1;';
-  inp.title='\u8F93\u5165\u9879\u76EE\u8DEF\u5F84\u540E\u6309 Enter \u9501\u5B9A\uFF0C\u6E05\u7A7A\u540E\u6309 Enter \u89E3\u9664';
+  inp.title='\u8F93\u5165\u9879\u76EE\u8DEF\u5F84\u540E\u6309 Enter \u53D1\u9001\u9501\u5B9A\u547D\u4EE4\uFF0C\u7B49\u5F85 Agent \u786E\u8BA4';
 
-  ub();
   inp.onkeydown=function(e){
-    if(e.key==='Enter'){e.preventDefault();e.stopPropagation();sp(inp.value);ub();inp.blur()}
+    if(e.key==='Enter'){
+      e.preventDefault();e.stopPropagation();
+      var path=inp.value.trim();
+      if(!path){
+        // 空路径 = 解锁
+        _pendingLockPath='__unlocking__';
+        updateUI();
+        sendToAgent('[unlock]');
+      }else if(isValidPath(path)){
+        // 发送锁定命令
+        _pendingLockPath=path;
+        updateUI();
+        sendToAgent('[lock: '+path+']');
+      }else{
+        // 无效路径，直接存 localStorage 作为本地缓存
+        sp(path);
+        updateUI();
+      }
+      inp.blur();
+    }
   };
-  inp.onchange=function(){sp(inp.value);ub()};
+  inp.onchange=function(){/* 不再直接存，必须通过 Agent 确认 */};
 
   _lockEl=w;_lockInp=inp;
 
-  // 监听响应中的 [Project: ...] 标记
-  var scanTimer=null;
-  function createResponseObserver(){
-    var app=document.querySelector('openclaw-app');
-    if(!app) return false;
-    var root=app.shadowRoot||app;
-    console.log('[ProjectLock] response observer attached');
-    var obs=new MutationObserver(function(){
-      if(graceActive||scanTimer) return;
-      scanTimer=setTimeout(function(){
-        scanTimer=null;
-        var bubbles=root.querySelectorAll('.chat-bubble:not(.chat-reading-indicator)');
-        for(var i=0;i<bubbles.length;i++){
-          var el=bubbles[i];
-          if(el.dataset.plDone) continue;
-          var html=el.innerHTML||'',raw=el.textContent||'';
-          if(scanForProjectPath(html)||scanForProjectPath(raw)){el.dataset.plDone='1';return;}
-        }
-      },500);
-    });
-    obs.observe(root,{childList:true,subtree:true,characterData:true});
-    return true;
-  }
-  createResponseObserver();
-  document.addEventListener('DOMContentLoaded',function(){setTimeout(createResponseObserver,500);});
+  // 状态标签
+  var st=document.createElement('span');
+  st.style.cssText='font-size:10px;color:var(--oc-muted,#888);flex-shrink:0;';
+  _lockStatus=st;
+  updateUI();
+
+  // 监听响应标记
+  createResponseObserver(document.querySelector('openclaw-app')?.shadowRoot||document.querySelector('openclaw-app')||document.body);
+  document.addEventListener('DOMContentLoaded',function(){
+    setTimeout(function(){
+      var app=document.querySelector('openclaw-app');
+      if(app) createResponseObserver(app.shadowRoot||app);
+    },500);
+  });
 
   // 监听会话切换
   (function(){
@@ -274,42 +324,31 @@ function mkEl(){
 
   w.appendChild(lb);
   w.appendChild(inp);
+  w.appendChild(st);
   return w;
 }
 
-// ===== 简化插入逻辑：直接轮询 =====
+// ===== 插入 UI =====
 function tryInsert(){
   if(_lockEl&&document.contains(_lockEl)) return true;
-  _lockEl=null;_lockInp=null;_lockIcon=null;
+  _lockEl=null;_lockInp=null;_lockIcon=null;_lockStatus=null;
   var app=document.querySelector('openclaw-app');
-  if(!app){
-    console.log('[ProjectLock] tryInsert: openclaw-app NOT FOUND');
-    return false;
-  }
+  if(!app) return false;
   var root=app.shadowRoot||app;
   var tb=root.querySelector('.agent-chat__toolbar');
-  if(!tb){
-    console.log('[ProjectLock] tryInsert: toolbar not found');
-    return false;
-  }
+  if(!tb) return false;
   var btns=tb.querySelectorAll('.agent-chat__input-btn');
   if(btns.length){btns[btns.length-1].after(mkEl())}
   else{tb.appendChild(mkEl())}
-  console.log('[ProjectLock] UI inserted successfully');
+  console.log('[ProjectLock] UI inserted');
   return true;
 }
 
-// 启动轮询
 var _pollCount=0;
 var _pollTimer=setInterval(function(){
   _pollCount++;
-  if(tryInsert()){
-    clearInterval(_pollTimer);
-    console.log('[ProjectLock] inserted after '+_pollCount+' polls');
-  }else if(_pollCount>=40){
-    clearInterval(_pollTimer);
-    console.log('[ProjectLock] poll timeout (20s)');
-  }
+  if(tryInsert()){clearInterval(_pollTimer);}
+  else if(_pollCount>=40){clearInterval(_pollTimer);}
 },500);
 
 var _bodyObs=new MutationObserver(function(){
@@ -320,8 +359,7 @@ setTimeout(function(){_bodyObs.disconnect();},20000);
 
 setInterval(function(){
   if(_lockEl&&!document.contains(_lockEl)){
-    console.log('[ProjectLock] UI detached, re-inserting');
-    _lockEl=null;_lockInp=null;_lockIcon=null;
+    _lockEl=null;_lockInp=null;_lockIcon=null;_lockStatus=null;
     tryInsert();
   }
 },2000);
