@@ -5,7 +5,7 @@
 var SK;
 var GRACE_MS = 3500;
 var graceActive = true;
-var _lockEl=null,_lockInp=null,_lockIcon=null,_lockStatus=null;
+var _lockEl=null,_lockInp=null,_lockIcon=null;
 var _pendingLockPath=null; // 等待 Agent 确认的路径
 
 setTimeout(function(){ graceActive = false; }, GRACE_MS);
@@ -153,7 +153,7 @@ var _lastHref=location.href;
 function onUrlChange(){
   if(location.href===_lastHref) return;
   _lastHref=location.href; resetSK();
-  _lockEl=null;_lockInp=null;_lockIcon=null;_lockStatus=null;
+  _lockEl=null;_lockInp=null;_lockIcon=null;ll;
   setTimeout(function(){tryInsert();},300);
 }
 history.pushState=function(){var r=_origPushState.apply(this,arguments);onUrlChange();return r;};
@@ -198,8 +198,7 @@ function updateUI(){
   _lockIcon.textContent=getStatusIcon(status);
   _lockIcon.title=getStatusTitle(status);
   _lockIcon.style.color=getStatusColor(status);
-  if(_lockStatus) _lockStatus.textContent=status==='pending'?'\u786E\u8BA4\u4E2D...':(status==='locked'?'\u5DF2\u9501\u5B9A':'\u672A\u9501\u5B9A');
-}
+  }
 function refreshUI(){updateUI();}
 
 // ===== 捕获响应中的标记（MutationObserver） =====
@@ -299,10 +298,7 @@ function mkEl(){
   _lockEl=w;_lockInp=inp;
 
   // 状态标签
-  var st=document.createElement('span');
-  st.style.cssText='font-size:10px;color:var(--oc-muted,#888);flex-shrink:0;';
-  _lockStatus=st;
-  updateUI();
+      updateUI();
 
   // 监听响应标记
   createResponseObserver(document.querySelector('openclaw-app')?.shadowRoot||document.querySelector('openclaw-app')||document.body);
@@ -324,14 +320,13 @@ function mkEl(){
 
   w.appendChild(lb);
   w.appendChild(inp);
-  w.appendChild(st);
-  return w;
+    return w;
 }
 
 // ===== 插入 UI =====
 function tryInsert(){
   if(_lockEl&&document.contains(_lockEl)) return true;
-  _lockEl=null;_lockInp=null;_lockIcon=null;_lockStatus=null;
+  _lockEl=null;_lockInp=null;_lockIcon=null;ll;
   var app=document.querySelector('openclaw-app');
   if(!app) return false;
   var root=app.shadowRoot||app;
@@ -359,7 +354,7 @@ setTimeout(function(){_bodyObs.disconnect();},20000);
 
 setInterval(function(){
   if(_lockEl&&!document.contains(_lockEl)){
-    _lockEl=null;_lockInp=null;_lockIcon=null;_lockStatus=null;
+    _lockEl=null;_lockInp=null;_lockIcon=null;ll;
     tryInsert();
   }
 },2000);
