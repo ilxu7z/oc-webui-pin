@@ -342,15 +342,33 @@ function waitToolbar(){
   },2000);
 }
 
+// openclaw-app 使用 Lit Shadow DOM，light children 始终为 0
+// 不能用 children.length 判断渲染完成，改用 shadowRoot 存在性
 function waitApp(){
-  var a=document.querySelector('openclaw-app,#root,#app');
-  if(a&&a.children.length>0){waitToolbar();return}
+  var app=document.querySelector('openclaw-app');
+  if(app&&app.shadowRoot&&app.shadowRoot.children.length>0){
+    waitToolbar();return;
+  }
   var ob=new MutationObserver(function(){
-    var el=document.querySelector('openclaw-app,#root,#app');
-    if(el&&el.children.length>0){ob.disconnect();waitToolbar()}
+    var app=document.querySelector('openclaw-app');
+    if(app&&app.shadowRoot&&app.shadowRoot.children.length>0){ob.disconnect();waitToolbar()}
   });
   ob.observe(document.documentElement,{childList:true,subtree:true});
-  setTimeout(function(){ob.disconnect()},15000);
+  // 兜底：即使 MutationObserver 未触发，也定期检查
+  var fallbackTimer=setInterval(function(){
+    var app=document.querySelector('openclaw-app');
+    if(app&&app.shadowRoot&&app.shadowRoot.children.length>0){
+      clearInterval(fallbackTimer);
+      ob.disconnect();
+      waitToolbar();
+    }
+  },500);
+  setTimeout(function(){
+    clearInterval(fallbackTimer);
+    ob.disconnect();
+    // 最终兜底：强制进入 waitToolbar
+    waitToolbar();
+  },15000);
 }
 
 if(document.readyState==='loading'){
