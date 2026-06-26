@@ -1,8 +1,5 @@
-  <!-- Project Lock UI Injection (v11) -->
-<!-- 修复: capture-phase keydown 替代 rAF+re-dispatch 消除双发bug -->
-<!-- 修复: 发送按钮选择器改为 .chat-send-btn (Shadow DOM 穿透) -->
-<!-- 修复: WS 劫持移至顶层，mkEl 前即生效 -->
-<!-- 修复: 清理 v8/v10 重复注入 -->
+  <!-- Project Lock UI Injection (v11.2) -->
+<!-- 简化插入逻辑: 直接轮询 shadowRoot + toolbar，去掉复杂的 waitApp/waitToolbar 链 -->
 <script>
 (function(){'use strict';
 var SK;
@@ -30,7 +27,7 @@ function gp(){if(!SK)SK=agentKey();try{return localStorage.getItem(SK)||''}catch
 function sp(p){if(!SK)SK=agentKey();try{localStorage.setItem(SK,p)}catch(e){}}
 var TP='\n[Project: ',TS=']';
 
-// ===== 路径扫描（WS + DOM 共用） =====
+// ===== 路径扫描 =====
 function scanForProjectPath(text){
   if(graceActive) return false;
   if(!text||typeof text!=='string') return false;
@@ -50,11 +47,10 @@ function scanForProjectPath(text){
   return false;
 }
 
-// ===== WS 劫持（顶层执行，不依赖 mkEl） =====
+// ===== WS 劫持 =====
 (function(){
   var _origWS=window.WebSocket;
-  if(!_origWS) return;
-  if(window.WebSocket._plPatched) return;
+  if(!_origWS||window.WebSocket._plPatched) return;
   function wrapWS(ws){
     var _origAdd=ws.addEventListener.bind(ws);
     ws.addEventListener=function(type,listener,opts){
@@ -71,8 +67,7 @@ function scanForProjectPath(text){
     var _msgDesc=Object.getOwnPropertyDescriptor(_origWS.prototype,'onmessage');
     if(_msgDesc){
       Object.defineProperty(ws,'onmessage',{
-        configurable:true,
-        enumerable:true,
+        configurable:true,enumerable:true,
         get:function(){return ws._plOrigOnMsg||_msgDesc.get.call(ws)},
         set:function(fn){
           if(typeof fn==='function'){
@@ -104,27 +99,23 @@ function scanForProjectPath(text){
   window.WebSocket._plPatched=true;
 })();
 
-// ===== Monkey-patch history =====
-var _origPushState = history.pushState;
-var _origReplaceState = history.replaceState;
-var _lastHref = location.href;
-
+// ===== history monkey-patch =====
+var _origPushState=history.pushState,_origReplaceState=history.replaceState;
+var _lastHref=location.href;
 function onUrlChange(){
-  if(location.href === _lastHref) return;
-  _lastHref = location.href;
-  resetSK();
-  _plInserted = false;
-  _lockEl = null; _lockInp = null; _lockIcon = null;
-  setTimeout(function(){ tryInsert(); }, 300);
+  if(location.href===_lastHref) return;
+  _lastHref=location.href; resetSK();
+  _lockEl=null;_lockInp=null;_lockIcon=null;
+  setTimeout(function(){tryInsert();},300);
 }
-history.pushState = function(){ var ret=_origPushState.apply(this,arguments); onUrlChange(); return ret; };
-history.replaceState = function(){ var ret=_origReplaceState.apply(this,arguments); onUrlChange(); return ret; };
-window.addEventListener('popstate', function(){ _lastHref=location.href; resetSK(); refreshUI(); });
+history.pushState=function(){var r=_origPushState.apply(this,arguments);onUrlChange();return r;};
+history.replaceState=function(){var r=_origReplaceState.apply(this,arguments);onUrlChange();return r;};
+window.addEventListener('popstate',function(){_lastHref=location.href;resetSK();refreshUI();});
 
 function refreshUI(){
   if(!_lockInp) return;
-  var val = gp();
-  _lockInp.value = val;
+  var val=gp();
+  _lockInp.value=val;
   if(_lockIcon){
     _lockIcon.textContent=val?'\u{1F512}':'\u{1F4CC}';
     _lockIcon.title=val?'\u{1F512} '+val+' — 点击解除锁定':'点击自动检测项目路径';
@@ -138,8 +129,7 @@ function ub(){
   }
 }
 
-// ===== 核心修复：capture-phase keydown 在 WebUI 读取前修改 value =====
-// 替代 v9 的 requestAnimationFrame + re-dispatch 方案，消除双发bug
+// ===== capture-phase keydown =====
 function injectTag(ta){
   var pp=gp();
   if(!pp||!ta.value) return;
@@ -151,17 +141,13 @@ function injectTag(ta){
     ta.value=ta.value+tag;
   }
 }
-
-// capture-phase: 在 Lit 事件处理前修改 textarea.value
-document.addEventListener('keydown', function(e){
+document.addEventListener('keydown',function(e){
   var ta=e.target;
   if(ta.tagName!=='TEXTAREA') return;
   var isSend=e.key==='Enter'&&!e.shiftKey&&!e.ctrlKey&&!e.metaKey;
   var isCtrlSend=e.key==='Enter'&&(e.ctrlKey||e.metaKey);
-  if(isSend||isCtrlSend){
-    injectTag(ta);
-  }
-}, true); // capture phase — 在 Lit 的 bubble phase handler 之前执行
+  if(isSend||isCtrlSend) injectTag(ta);
+},true);
 
 // ===== 发送按钮 Shadow DOM 穿透 =====
 function getShadowSendBtn(){
@@ -169,23 +155,18 @@ function getShadowSendBtn(){
   if(!app||!app.shadowRoot) return null;
   return app.shadowRoot.querySelector('.chat-send-btn');
 }
-
 function triggerSend(){
   var sb=getShadowSendBtn();
-  if(sb&&!sb.disabled){ sb.click(); return true; }
-  // fallback: 模拟 Enter
+  if(sb&&!sb.disabled){sb.click();return true;}
   var app=document.querySelector('openclaw-app');
   if(app&&app.shadowRoot){
     var ta=app.shadowRoot.querySelector('textarea');
-    if(ta){
-      ta.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
-      return true;
-    }
+    if(ta){ta.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));return true;}
   }
   return false;
 }
 
-// ===== 📌 按钮 =====
+// ===== 📌 UI =====
 function mkEl(){
   var w=document.createElement('div');
   w.id='openclaw-project-lock';
@@ -197,11 +178,10 @@ function mkEl(){
   lb.textContent=gp()?'\u{1F512}':'\u{1F4CC}';
   lb.title=gp()?'\u{1F512} '+gp()+' — 点击解除锁定':'点击自动检测项目路径';
   lb.style.cssText='font-size:12px;cursor:pointer;flex-shrink:0;';
-  _lockIcon=lb; // 必须在 ub() 前赋值
+  _lockIcon=lb;
 
   lb.onclick=function(){
     if(gp()){inp.value='';sp('');ub();return}
-    // 发送 [detect-project] 指令 — 使用 Shadow DOM 穿透
     var app=document.querySelector('openclaw-app');
     if(!app||!app.shadowRoot) return;
     var ta=app.shadowRoot.querySelector('textarea');
@@ -210,7 +190,7 @@ function mkEl(){
     ns.call(ta,'[detect-project]');
     ta.dispatchEvent(new Event('input',{bubbles:true}));
     ta.focus();
-    setTimeout(function(){ triggerSend(); }, 150);
+    setTimeout(function(){triggerSend();},150);
   };
 
   var inp=document.createElement('input');
@@ -226,157 +206,87 @@ function mkEl(){
   };
   inp.onchange=function(){sp(inp.value);ub()};
 
-  _lockEl=w; _lockInp=inp;
+  _lockEl=w;_lockInp=inp;
 
-  // ===== Shadow DOM 穿透 + DOM MutationObserver =====
-  function scanElements(root){
-    var bubbles=root.querySelectorAll('.chat-bubble:not(.chat-reading-indicator)');
-    var assists=root.querySelectorAll('[class*="assistant"]');
-    var targets=[];
-    for(var i=0;i<bubbles.length;i++) targets.push(bubbles[i]);
-    for(var i=0;i<assists.length;i++) targets.push(assists[i]);
-    for(var t=0;t<targets.length;t++){
-      var el=targets[t];
-      if(el.dataset.plDone) continue;
-      var html=el.innerHTML||'';
-      var raw=el.textContent||'';
-      if(scanForProjectPath(html)||scanForProjectPath(raw)){
-        el.dataset.plDone='1';
-        return true;
-      }
-    }
-    return false;
-  }
-
+  // Shadow DOM MutationObserver for response scanning
   var scanTimer=null;
-  var shadowObs=null;
-
   function createShadowObserver(){
-    if(shadowObs) return;
     var app=document.querySelector('openclaw-app');
     if(!app||!app.shadowRoot) return false;
     console.log('[ProjectLock] Shadow DOM observer attached');
-    shadowObs=new MutationObserver(function(){
-      if(graceActive) return;
-      if(scanTimer) return;
+    var obs=new MutationObserver(function(){
+      if(graceActive||scanTimer) return;
       scanTimer=setTimeout(function(){
         scanTimer=null;
-        if(scanElements(app.shadowRoot)) return;
-        var nested=app.shadowRoot.querySelectorAll('*');
-        for(var i=0;i<nested.length;i++){
-          if(nested[i].shadowRoot&&scanElements(nested[i].shadowRoot)) return;
+        var bubbles=app.shadowRoot.querySelectorAll('.chat-bubble:not(.chat-reading-indicator)');
+        for(var i=0;i<bubbles.length;i++){
+          var el=bubbles[i];
+          if(el.dataset.plDone) continue;
+          var html=el.innerHTML||'',raw=el.textContent||'';
+          if(scanForProjectPath(html)||scanForProjectPath(raw)){el.dataset.plDone='1';return;}
         }
       },500);
     });
-    shadowObs.observe(app.shadowRoot,{childList:true,subtree:true,characterData:true});
+    obs.observe(app.shadowRoot,{childList:true,subtree:true,characterData:true});
     return true;
   }
-
   createShadowObserver();
-  document.addEventListener('DOMContentLoaded',function(){
-    setTimeout(function(){ createShadowObserver(); },500);
-  });
-
-  var replyObs=new MutationObserver(function(){
-    if(graceActive) return;
-    if(scanTimer) return;
-    scanTimer=setTimeout(function(){
-      scanTimer=null;
-      var app=document.querySelector('openclaw-app');
-      if(app&&app.shadowRoot){
-        if(scanElements(app.shadowRoot)) return;
-      }
-    },500);
-  });
-  replyObs.observe(document.body,{childList:true,subtree:true,characterData:true});
+  document.addEventListener('DOMContentLoaded',function(){setTimeout(createShadowObserver,500);});
 
   w.appendChild(lb);
   w.appendChild(inp);
   return w;
 }
 
-// ===== 工具栏插入 =====
-var _plInserted=false;
+// ===== 简化插入逻辑：直接轮询 =====
 function tryInsert(){
-  if(_lockEl && document.contains(_lockEl)) return true;
-  _plInserted = false;
-  _lockEl = null; _lockInp = null; _lockIcon = null;
+  if(_lockEl&&document.contains(_lockEl)) return true;
+  _lockEl=null;_lockInp=null;_lockIcon=null;
   var app=document.querySelector('openclaw-app');
-  if(!app||!app.shadowRoot) return false;
+  if(!app||!app.shadowRoot){
+    console.log('[ProjectLock] tryInsert: no app or shadowRoot yet');
+    return false;
+  }
   var tb=app.shadowRoot.querySelector('.agent-chat__toolbar');
   if(!tb){
-    var nested=app.shadowRoot.querySelectorAll('*');
-    for(var i=0;i<nested.length;i++){
-      if(nested[i].shadowRoot){
-        tb=nested[i].shadowRoot.querySelector('.agent-chat__toolbar');
-        if(tb) break;
-      }
-    }
+    console.log('[ProjectLock] tryInsert: no toolbar in shadowRoot');
+    return false;
   }
-  if(!tb) return false;
   var btns=tb.querySelectorAll('.agent-chat__input-btn');
   if(btns.length){btns[btns.length-1].after(mkEl())}
   else{tb.appendChild(mkEl())}
-  _plInserted=true;
+  console.log('[ProjectLock] UI inserted successfully');
   return true;
 }
 
-function waitToolbar(){
-  if(tryInsert()) return;
-  var ob=new MutationObserver(function(){
-    if(tryInsert()){ob.disconnect();return}
-    if(_plInserted&&!document.getElementById('openclaw-project-lock')){
-      _plInserted=false;
-    }
-  });
-  ob.observe(document.body,{childList:true,subtree:true});
-  setInterval(function(){
-    if(_lockEl && !document.contains(_lockEl)){
-      console.log('[ProjectLock] UI detached, re-inserting');
-      _plInserted = false;
-      _lockEl = null; _lockInp = null; _lockIcon = null;
-      tryInsert();
-      return;
-    }
-    if(!_lockEl){ tryInsert(); }
-  },2000);
-}
-
-// openclaw-app 使用 Lit Shadow DOM，light children 始终为 0
-// 不能用 children.length 判断渲染完成，改用 shadowRoot 存在性
-function waitApp(){
-  var app=document.querySelector('openclaw-app');
-  if(app&&app.shadowRoot&&app.shadowRoot.children.length>0){
-    waitToolbar();return;
+// 启动轮询：每500ms尝试一次，最多20秒
+var _pollCount=0;
+var _pollTimer=setInterval(function(){
+  _pollCount++;
+  if(tryInsert()){
+    clearInterval(_pollTimer);
+    console.log('[ProjectLock] inserted after '+_pollCount+' polls');
+  }else if(_pollCount>=40){
+    clearInterval(_pollTimer);
+    console.log('[ProjectLock] poll timeout (20s)');
   }
-  var ob=new MutationObserver(function(){
-    var app=document.querySelector('openclaw-app');
-    if(app&&app.shadowRoot&&app.shadowRoot.children.length>0){ob.disconnect();waitToolbar()}
-  });
-  ob.observe(document.documentElement,{childList:true,subtree:true});
-  // 兜底：即使 MutationObserver 未触发，也定期检查
-  var fallbackTimer=setInterval(function(){
-    var app=document.querySelector('openclaw-app');
-    if(app&&app.shadowRoot&&app.shadowRoot.children.length>0){
-      clearInterval(fallbackTimer);
-      ob.disconnect();
-      waitToolbar();
-    }
-  },500);
-  setTimeout(function(){
-    clearInterval(fallbackTimer);
-    ob.disconnect();
-    // 最终兜底：强制进入 waitToolbar
-    waitToolbar();
-  },15000);
-}
+},500);
 
-if(document.readyState==='loading'){
-  document.addEventListener('DOMContentLoaded',waitApp);
-}else{
-  waitApp();
-}
+// 也监听 body 变化作为辅助触发
+var _bodyObs=new MutationObserver(function(){
+  if(!_lockEl) tryInsert();
+});
+_bodyObs.observe(document.body,{childList:true,subtree:true});
+setTimeout(function(){_bodyObs.disconnect();},20000);
+
+// SPA 导航时重建
+setInterval(function(){
+  if(_lockEl&&!document.contains(_lockEl)){
+    console.log('[ProjectLock] UI detached, re-inserting');
+    _lockEl=null;_lockInp=null;_lockIcon=null;
+    tryInsert();
+  }
+},2000);
 })();
 </script>
-
 <!-- End Project Lock UI Injection -->
