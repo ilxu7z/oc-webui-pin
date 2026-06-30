@@ -1,4 +1,4 @@
-<!-- Project Lock UI Injection (v24) -->
+<!-- Project Lock UI Injection (v25) -->
 <script>
 (function(){'use strict';
 var _lockEl=null,_lockInp=null,_lockIcon=null;
@@ -14,9 +14,9 @@ function getSessionKey(){
   return 'main';
 }
 function getSK(){return 'openclaw_project_lock_'+getSessionKey().replace(/[^a-zA-Z0-9_-]/g,'_');}
-function gp(){try{return sessionStorage.getItem(getSK())||'';}catch(e){return ''}}
-function sp(p){try{sessionStorage.setItem(getSK(),p);}catch(e){}}
-function rp(){try{sessionStorage.removeItem(getSK());}catch(e){}}
+function gp(){try{return localStorage.getItem(getSK())||'';}catch(e){return ''}}
+function sp(p){try{localStorage.setItem(getSK(),p);}catch(e){}}
+function rp(){try{localStorage.removeItem(getSK());}catch(e){}}
 function resetSK(){SK=null;}
 function isValidPath(p){return /^[\/~]|[A-Za-z]:[\\\/]/.test(p)}
 
@@ -257,6 +257,8 @@ function mkEl(){
     }
   };
   _lockEl=w;_lockInp=inp;
+  // 页面加载时自动同步：如果已有锁定路径，显示在输入框
+  if(gp()){console.log('[PL] Restored lock from localStorage:', gp());}
   updateUI();
 
   var app=document.querySelector('openclaw-app');
