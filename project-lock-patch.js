@@ -10,18 +10,16 @@ var _pendingDetect=false,_detectTimer=null;
 var _pendingLock=false,_pendingUnlock=false,_lockTimer=null,_unlockTimer=null;
 
 // ===== sessionStorage: per-tab 隔离 =====
-function simplifyKey(fullKey){
-  if(!fullKey) return 'main';
-  var parts=fullKey.split(':');
-  var surfaces=['webchat','telegram','signal','whatsapp','discord','slack'];
-  if(parts.length>=3&&surfaces.indexOf(parts[2])>=0) return parts[1]||'main';
-  return parts.length<=2?fullKey:(parts[1]||fullKey);
-}
+// 同一 tab 内不同 session（explicit/dashboard/fallback 等）完全隔离
+// storage key 使用完整的 session key，不简化
 function getSessionKey(){
+  // 1. session picker 选中项
   var sel=document.querySelector('[data-chat-session-picker-option][aria-selected="true"]');
-  if(sel){var key=sel.getAttribute('data-session-key');if(key) return simplifyKey(key);}
+  if(sel){var key=sel.getAttribute('data-session-key');if(key) return key;}
+  // 2. URL session 参数（最精确——直接来自页面 URL）
   var s=location.search.match(/session=([^&]+)/);
-  if(s){try{return simplifyKey(decodeURIComponent(s[1]));}catch(e){}}
+  if(s){try{return decodeURIComponent(s[1]);}catch(e){}}
+  // 3. 回退
   return 'main';
 }
 function getSK(){
@@ -64,11 +62,15 @@ function parseMarker(text,type){
   return {sessionKey:inner.slice(0,sep).trim(),value:inner.slice(sep+2).trim()};
 }
 function isForMe(markerKey){
-  var cur=getSessionKey();
-  if(markerKey===cur) return true;
-  var mA=markerKey.split(':')[1]||markerKey;
-  var cA=cur.split(':')[1]||cur;
-  return mA===cA;
+  // Agent 端标记的 sessionKey 简化为 'main'
+  // 前端 getSessionKey() 对 explicit/dashboard/fallback 等也返回完整 key
+  // 用通配匹配：如果 markerKey 是 'main' 则匹配任何以 'main' 为第二段的 key
+  if(markerKey==='main'){
+    var cur=getSessionKey();
+    var parts=cur.split(':');
+    return parts.length>=2?parts[1]==='main':cur==='main';
+  }
+  return markerKey===getSessionKey();
 }
 
 // ===== 入站命令监听（检测发出去的 [lock:] / [unlock] 以便匹配响应） =====
