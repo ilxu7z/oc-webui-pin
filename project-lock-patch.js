@@ -1,4 +1,4 @@
-<!-- Project Lock UI Injection (v25) -->
+<!-- Project Lock UI Injection (v26) -->
 <script>
 (function(){'use strict';
 var _lockEl=null,_lockInp=null,_lockIcon=null;
@@ -13,7 +13,7 @@ function getSessionKey(){
   if(s){try{return decodeURIComponent(s[1]);}catch(e){}}
   return 'main';
 }
-function getSK(){return 'openclaw_project_lock_'+getSessionKey().replace(/[^a-zA-Z0-9_-]/g,'_');}
+function getSK(){return 'openclaw_project_lock_v2';}
 function gp(){try{return localStorage.getItem(getSK())||'';}catch(e){return ''}}
 function sp(p){try{localStorage.setItem(getSK(),p);}catch(e){}}
 function rp(){try{localStorage.removeItem(getSK());}catch(e){}}
