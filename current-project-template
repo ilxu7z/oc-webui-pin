@@ -1,7 +1,7 @@
 # Project Lock
-# 由 WebUI 输入框或 agent 自动写入
+# 由 Agent 接到 [lock: /path] 指令后自动写入
 # 清空此文件 = 解除锁定（自由模式）
 
-#PATH: 
-#FOCUS: 
-#LOCKED_AT: 
+#PATH:
+#FOCUS:
+#LOCKED_AT:
