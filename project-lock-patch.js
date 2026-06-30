@@ -1,4 +1,4 @@
-<!-- Project Lock UI Injection (v29) -->
+<!-- Project Lock UI Injection (v30) -->
 <script>
 (function(){'use strict';
 var _lockEl=null,_lockInp=null,_lockIcon=null;
@@ -222,6 +222,7 @@ function mkEl(){
   lb.onclick=function(){
     if(_pendingLockPath) return;
     if(gp()){
+      _pendingUnlock=true;
       _pendingLockPath='__unlocking__';updateUI();
       sendToAgent('[unlock]');
     }else{
@@ -242,6 +243,7 @@ function mkEl(){
       e.preventDefault();e.stopPropagation();
       var path=inp.value.trim();
       if(!path){
+        _pendingUnlock=true;
         _pendingLockPath='__unlocking__';updateUI();
         sendToAgent('[unlock]');
       }else if(isValidPath(path)){
