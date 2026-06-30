@@ -1,4 +1,4 @@
-<!-- Project Lock UI Injection (v27) -->
+<!-- Project Lock UI Injection (v28) -->
 <script>
 (function(){'use strict';
 var _lockEl=null,_lockInp=null,_lockIcon=null;
@@ -13,10 +13,10 @@ function getSessionKey(){
   if(s){try{return decodeURIComponent(s[1]);}catch(e){}}
   return 'main';
 }
-function getSK(){return 'openclaw_project_lock_v2';}
-function gp(){try{return localStorage.getItem(getSK())||'';}catch(e){return ''}}
-function sp(p){try{localStorage.setItem(getSK(),p);}catch(e){}}
-function rp(){try{localStorage.removeItem(getSK());}catch(e){}}
+function getSK(){return 'openclaw_project_lock_'+getSessionKey().replace(/[^a-zA-Z0-9_-]/g,'_');}
+function gp(){try{return sessionStorage.getItem(getSK())||'';}catch(e){return ''}}
+function sp(p){try{sessionStorage.setItem(getSK(),p);}catch(e){}}
+function rp(){try{sessionStorage.removeItem(getSK());}catch(e){}}
 function resetSK(){SK=null;}
 function isValidPath(p){return /^[\/~]|[A-Za-z]:[\\\/]/.test(p)}
 
@@ -257,6 +257,18 @@ function mkEl(){
   };
   _lockEl=w;_lockInp=inp;
   updateUI();
+  // 页面加载时自动同步：如果 sessionStorage 有值直接显示，无值则自动检测
+  var cur=gp();
+  if(!cur){
+    setTimeout(function(){
+      if(!gp()){
+        _pendingDetect=true;
+        if(_detectTimer) clearTimeout(_detectTimer);
+        _detectTimer=setTimeout(function(){_pendingDetect=false;_detectTimer=null;},60000);
+        sendToAgent('[detect-project]');
+      }
+    },2000);
+  }
 
   var app=document.querySelector('openclaw-app');
   if(app) createObserver(app.shadowRoot||app);
