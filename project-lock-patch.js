@@ -1,5 +1,4 @@
-<!-- Project Lock UI Injection (v19) -->
-<!-- 修复: 移除第二循环 + 移除离线同步 + WS 累积兜底 -->
+          <!-- Project Lock UI Injection (v20) -->
 <script>
 (function(){'use strict';
 var SK;
@@ -8,25 +7,20 @@ var _pendingLockPath=null;
 var _pendingDetect=false,_detectTimer=null;
 var _pendingLock=false,_pendingUnlock=false,_lockTimer=null,_unlockTimer=null;
 
-// ===== sessionStorage: 完整 session key 隔离 =====
 function getSessionKey(){
   var sel=document.querySelector('[data-chat-session-picker-option][aria-selected="true"]');
-  if(sel){var key=sel.getAttribute('data-session-key');if(key) return key;}
+  if(sel){var k=sel.getAttribute('data-session-key');if(k) return k;}
   var s=location.search.match(/session=([^&]+)/);
   if(s){try{return decodeURIComponent(s[1]);}catch(e){}}
   return 'main';
 }
-function getSK(){
-  return 'openclaw_project_lock_'+getSessionKey().replace(/[^a-zA-Z0-9_-]/g,'_');
-}
+function getSK(){return 'openclaw_project_lock_'+getSessionKey().replace(/[^a-zA-Z0-9_-]/g,'_');}
 function gp(){if(!SK)SK=getSK();try{return sessionStorage.getItem(SK)||''}catch(e){return ''}}
 function sp(p){if(!SK)SK=getSK();try{sessionStorage.setItem(SK,p)}catch(e){}}
 function rp(){if(!SK)SK=getSK();try{sessionStorage.removeItem(SK)}catch(e){}}
 function resetSK(){SK=null;}
-
 function isValidPath(p){return /^[\/~]|[A-Za-z]:[\\\/]/.test(p)}
 
-// ===== 发送命令到 Agent =====
 function sendToAgent(text){
   var app=document.querySelector('openclaw-app');
   if(!app) return false;
@@ -45,7 +39,6 @@ function sendToAgent(text){
   return true;
 }
 
-// ===== 标记解析 =====
 function parseMarker(text,type){
   var re=new RegExp('\\['+type+':\\s*([^\\]]+)\\]');
   var m=text.match(re);
@@ -64,53 +57,22 @@ function isForMe(markerKey){
   return markerKey===getSessionKey();
 }
 
-// ===== 入站命令监听 =====
-function watchForPendingCommands(){
-  var app=document.querySelector('openclaw-app');
-  if(!app) return;
-  var root=app.shadowRoot||app;
-  var ta=root.querySelector('textarea');
-  var _lastVal='';
-  setInterval(function(){
-    if(!ta||!ta.value) return;
-    var v=ta.value.trim();
-    if(v===_lastVal) return;
-    _lastVal=v;
-    if(v.indexOf('[lock:')===0){
-      _pendingLock=true;
-      if(_lockTimer) clearTimeout(_lockTimer);
-      _lockTimer=setTimeout(function(){_pendingLock=false;_lockTimer=null;},15000);
-    }
-    if(v==='[unlock]'){
-      _pendingUnlock=true;
-      if(_unlockTimer) clearTimeout(_unlockTimer);
-      _unlockTimer=setTimeout(function(){_pendingUnlock=false;_unlockTimer=null;},15000);
-    }
-  },50);
-}
-setTimeout(watchForPendingCommands,1000);
-
-// ===== 核心：扫描标记 =====
 function scanForMarkers(text){
   if(!text||typeof text!=='string') return false;
   var changed=false;
 
-  // [LockConfirmed:]
   var lc=parseMarker(text,'LockConfirmed');
   if(lc&&isForMe(lc.sessionKey)&&isValidPath(lc.value)){
     sp(lc.value);_pendingLockPath=null;changed=true;
     _pendingLock=false;if(_lockTimer){clearTimeout(_lockTimer);_lockTimer=null;}
   }
 
-  // [LockCleared:]
   var clr=parseMarker(text,'LockCleared');
   if(clr&&isForMe(clr.sessionKey)){
     rp();_pendingLockPath=null;changed=true;
     _pendingUnlock=false;if(_unlockTimer){clearTimeout(_unlockTimer);_unlockTimer=null;}
   }
 
-  // [Project:] -- 只在 _pendingDetect 窗口内接受
-  // 移除离线同步路径：防止旧气泡中字面量 [Project: main::/path] 串扰
   var pm=parseMarker(text,'Project');
   if(pm&&isForMe(pm.sessionKey)&&isValidPath(pm.value)){
     if(_pendingDetect){
@@ -123,7 +85,6 @@ function scanForMarkers(text){
   return changed;
 }
 
-// ===== DOM MutationObserver =====
 var _obs=null;
 function createObserver(root){
   if(_obs) _obs.disconnect();
@@ -133,7 +94,7 @@ function createObserver(root){
     timer=setTimeout(function(){
       timer=null;
       for(var m=0;m<mutations.length;m++){
-        // 处理 addedNodes（新增气泡）
+        // process addedNodes
         var nodes=mutations[m].addedNodes;
         for(var j=0;j<nodes.length;j++){
           var n=nodes[j];
@@ -149,14 +110,19 @@ function createObserver(root){
             }
           }
         }
-        // 处理 characterData（流式 token 追加到已有气泡）
-        var ct=mutations[m].target;
-        if(mutations[m].type==='characterData'&&ct&&ct.parentElement){
-          var cb=ct.parentElement.closest?ct.parentElement.closest('.chat-bubble:not(.chat-reading-indicator)'):null;
-          if(cb && !cb.dataset.plDone){
-            if(scanForMarkers(cb.innerHTML)||scanForMarkers(cb.textContent)){
-              cb.dataset.plDone='1';return;
+        // process characterData (streaming token append)
+        if(mutations[m].type==='characterData'){
+          var p=mutations[m].target.parentNode;
+          while(p&&p.nodeType===1){
+            if(p.classList&&p.classList.contains('chat-bubble')&&!p.classList.contains('chat-reading-indicator')){
+              if(!p.dataset.plDone){
+                if(scanForMarkers(p.innerHTML)||scanForMarkers(p.textContent)){
+                  p.dataset.plDone='1';
+                }
+              }
+              break;
             }
+            p=p.parentNode;
           }
         }
       }
@@ -165,9 +131,8 @@ function createObserver(root){
   _obs.observe(root,{childList:true,subtree:true,characterData:true});
 }
 
-// ===== 流式响应分裂保护 =====
-var _bracketBuf = {};
-function accumulateStreamChunk(chunk, sourceId){
+var _bracketBuf={};
+function accumulateStreamChunk(chunk,sourceId){
   var id=sourceId||'default';
   if(!_bracketBuf[id]) _bracketBuf[id]='';
   _bracketBuf[id]+=chunk;
@@ -175,7 +140,7 @@ function accumulateStreamChunk(chunk, sourceId){
   if(buf.indexOf(']')>=0){
     var markers=['[Project:','[LockConfirmed:','[LockCleared:'];
     for(var mi=0;mi<markers.length;mi++){
-      if(buf.indexOf(markers[mi])>=0 && buf.indexOf(']',buf.indexOf(markers[mi]))>=0){
+      if(buf.indexOf(markers[mi])>=0&&buf.indexOf(']',buf.indexOf(markers[mi]))>=0){
         _bracketBuf[id]='';
         scanForMarkers(buf);
         return;
@@ -185,7 +150,6 @@ function accumulateStreamChunk(chunk, sourceId){
   if(buf.length>1000||buf.indexOf('\n')>=0) _bracketBuf[id]='';
 }
 
-// ===== WS 原型劫持（流式累积 + 标记扫描） =====
 (function(){
   var _origWS=window.WebSocket;
   if(!_origWS||window.WebSocket._plPatched) return;
@@ -197,7 +161,7 @@ function accumulateStreamChunk(chunk, sourceId){
       if(type==='message'){
         var wrapped=function(event){
           var data=typeof event.data==='string'?event.data:(event.data&&event.data.toString?event.data.toString():'');
-          if(data){scanForMarkers(data);accumulateStreamChunk(data, wsId);}
+          if(data){scanForMarkers(data);accumulateStreamChunk(data,wsId);}
           return listener.call(this,event);
         };
         return _origAdd.call(ws,type,wrapped,opts);
@@ -213,15 +177,12 @@ function accumulateStreamChunk(chunk, sourceId){
           if(typeof fn==='function'){
             var wrapped=function(event){
               var data=typeof event.data==='string'?event.data:(event.data&&event.data.toString?event.data.toString():'');
-              if(data){scanForMarkers(data);accumulateStreamChunk(data, wsId);}
+              if(data){scanForMarkers(data);accumulateStreamChunk(data,wsId);}
               return fn.call(this,event);
             };
             ws._plOrigOnMsg=wrapped;
             _msgDesc.set.call(ws,wrapped);
-          }else{
-            ws._plOrigOnMsg=null;
-            _msgDesc.set.call(ws,fn);
-          }
+          }else{ws._plOrigOnMsg=null;_msgDesc.set.call(ws,fn);}
         }
       });
     }
@@ -235,7 +196,6 @@ function accumulateStreamChunk(chunk, sourceId){
   window.WebSocket._plPatched=true;
 })();
 
-// ===== UI =====
 function updateUI(){
   if(!_lockInp||!_lockIcon) return;
   var val=gp();
@@ -243,7 +203,7 @@ function updateUI(){
   var locked=!!val&&!_pendingLockPath;
   _lockInp.value=displayVal;
   _lockIcon.textContent=_pendingLockPath?'\u{1F504}':locked?'\u{1F512}':'\u{1F4CC}';
-  _lockIcon.title=_pendingLockPath?'等待 Agent 确认...':locked?'\u{1F512} '+val+' -- \u70B9\u51FB\u89E3\u9664\u9501\u5B9A':'\u70B9\u51FB\u81EA\u52A8\u68C0\u6D4B\u9879\u76EE\u8DEF\u5F84';
+  _lockIcon.title=_pendingLockPath?'\u7B49\u5F85 Agent \u786E\u8BA4...':locked?'\u{1F512} '+val:'\u70B9\u51FB\u81EA\u52A8\u68C0\u6D4B\u9879\u76EE\u8DEF\u5F84';
   _lockIcon.style.color=_pendingLockPath?'var(--oc-warning,#f59e0b)':locked?'var(--oc-success,#22c55e)':'';
 }
 
@@ -284,8 +244,7 @@ function mkEl(){
         sendToAgent('[unlock]');
       }else if(isValidPath(path)){
         _pendingLockPath=path;updateUI();
-        _pendingLock=true;
-        if(_lockTimer) clearTimeout(_lockTimer);
+        _pendingLock=true;if(_lockTimer) clearTimeout(_lockTimer);
         _lockTimer=setTimeout(function(){_pendingLock=false;_lockTimer=null;},15000);
         sendToAgent('[lock: '+path+']');
       }else{
@@ -294,7 +253,6 @@ function mkEl(){
       inp.blur();
     }
   };
-
   _lockEl=w;_lockInp=inp;
   updateUI();
 
@@ -306,13 +264,10 @@ function mkEl(){
       if(app) createObserver(app.shadowRoot||app);
     },500);
   });
-
-  w.appendChild(lb);
-  w.appendChild(inp);
+  w.appendChild(lb);w.appendChild(inp);
   return w;
 }
 
-// ===== 插入 UI =====
 function tryInsert(){
   if(_lockEl&&document.contains(_lockEl)) return true;
   document.querySelectorAll('#openclaw-project-lock').forEach(function(el){el.remove();});
