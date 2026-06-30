@@ -1,7 +1,6 @@
-          <!-- Project Lock UI Injection (v20) -->
+<!-- Project Lock UI Injection (v21) -->
 <script>
 (function(){'use strict';
-var SK;
 var _lockEl=null,_lockInp=null,_lockIcon=null;
 var _pendingLockPath=null;
 var _pendingDetect=false,_detectTimer=null;
@@ -15,9 +14,9 @@ function getSessionKey(){
   return 'main';
 }
 function getSK(){return 'openclaw_project_lock_'+getSessionKey().replace(/[^a-zA-Z0-9_-]/g,'_');}
-function gp(){if(!SK)SK=getSK();try{return sessionStorage.getItem(SK)||''}catch(e){return ''}}
-function sp(p){if(!SK)SK=getSK();try{sessionStorage.setItem(SK,p)}catch(e){}}
-function rp(){if(!SK)SK=getSK();try{sessionStorage.removeItem(SK)}catch(e){}}
+function gp(){try{return sessionStorage.getItem(getSK())||'';}catch(e){return ''}}
+function sp(p){try{sessionStorage.setItem(getSK(),p);}catch(e){}}
+function rp(){try{sessionStorage.removeItem(getSK());}catch(e){}}
 function resetSK(){SK=null;}
 function isValidPath(p){return /^[\/~]|[A-Za-z]:[\\\/]/.test(p)}
 
