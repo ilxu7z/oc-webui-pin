@@ -1,6 +1,5 @@
-        <!-- Project Lock UI Injection (v16) -->
-<!-- 自动更新日期: 2026-06-30 -->
-<!-- 修复: 流式响应分裂 / WS 回退捕获 / 离线同步 / 入站命令监听 -->
+        <!-- Project Lock UI Injection (v17) -->
+<!-- session 级隔离 + 流式响应分裂修复 + WS 回退捕获 + 离线同步 -->
 <script>
 (function(){'use strict';
 var SK;
