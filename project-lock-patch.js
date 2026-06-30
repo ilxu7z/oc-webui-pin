@@ -1,4 +1,4 @@
-<!-- Project Lock UI Injection (v22) -->
+<!-- Project Lock UI Injection (v24) -->
 <script>
 (function(){'use strict';
 var _lockEl=null,_lockInp=null,_lockIcon=null;
@@ -75,8 +75,11 @@ function scanForMarkers(text){
   var pm=parseMarker(text,'Project');
   if(pm&&isForMe(pm.sessionKey)&&isValidPath(pm.value)){
     if(_pendingDetect){
-      sp(pm.value);_pendingDetect=false;changed=true;
-      if(_detectTimer){clearTimeout(_detectTimer);_detectTimer=null;}
+      // 不立即清除 _pendingDetect，允许多次覆盖
+      // WebSocket 回放历史消息时可能先到达旧标记再到达新标记
+      sp(pm.value);changed=true;
+      if(_detectTimer) clearTimeout(_detectTimer);
+      _detectTimer=setTimeout(function(){_pendingDetect=false;_detectTimer=null;},60000);
     }
   }
 
@@ -223,8 +226,9 @@ function mkEl(){
       sendToAgent('[unlock]');
     }else{
       _pendingDetect=true;
+      console.log('[PL] SET _pendingDetect=true');
       if(_detectTimer) clearTimeout(_detectTimer);
-      _detectTimer=setTimeout(function(){_pendingDetect=false;_detectTimer=null;},60000);
+      _detectTimer=setTimeout(function(){console.log('[PL] TIMEOUT');_pendingDetect=false;_detectTimer=null;},60000);
       sendToAgent('[detect-project]');
     }
   };
