@@ -226,9 +226,8 @@ function mkEl(){
       sendToAgent('[unlock]');
     }else{
       _pendingDetect=true;
-      console.log('[PL] SET _pendingDetect=true');
       if(_detectTimer) clearTimeout(_detectTimer);
-      _detectTimer=setTimeout(function(){console.log('[PL] TIMEOUT');_pendingDetect=false;_detectTimer=null;},60000);
+      _detectTimer=setTimeout(function(){_pendingDetect=false;_detectTimer=null;},60000);
       sendToAgent('[detect-project]');
     }
   };
@@ -257,8 +256,6 @@ function mkEl(){
     }
   };
   _lockEl=w;_lockInp=inp;
-  // 页面加载时自动同步：如果已有锁定路径，显示在输入框
-  if(gp()){console.log('[PL] Restored lock from localStorage:', gp());}
   updateUI();
 
   var app=document.querySelector('openclaw-app');
