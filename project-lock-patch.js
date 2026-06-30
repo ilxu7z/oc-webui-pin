@@ -1,4 +1,4 @@
-<!-- Project Lock UI Injection (v18) -->
+<!-- Project Lock UI Injection (v19) -->
 <!-- 修复: 移除第二循环 + 移除离线同步 + WS 累积兜底 -->
 <script>
 (function(){'use strict';
@@ -133,6 +133,7 @@ function createObserver(root){
     timer=setTimeout(function(){
       timer=null;
       for(var m=0;m<mutations.length;m++){
+        // 处理 addedNodes（新增气泡）
         var nodes=mutations[m].addedNodes;
         for(var j=0;j<nodes.length;j++){
           var n=nodes[j];
@@ -145,6 +146,16 @@ function createObserver(root){
             if(el.dataset.plDone) continue;
             if(scanForMarkers(el.innerHTML)||scanForMarkers(el.textContent)){
               el.dataset.plDone='1';return;
+            }
+          }
+        }
+        // 处理 characterData（流式 token 追加到已有气泡）
+        var ct=mutations[m].target;
+        if(mutations[m].type==='characterData'&&ct&&ct.parentElement){
+          var cb=ct.parentElement.closest?ct.parentElement.closest('.chat-bubble:not(.chat-reading-indicator)'):null;
+          if(cb && !cb.dataset.plDone){
+            if(scanForMarkers(cb.innerHTML)||scanForMarkers(cb.textContent)){
+              cb.dataset.plDone='1';return;
             }
           }
         }
