@@ -1,4 +1,4 @@
-<!-- Project Lock UI Injection (v26) -->
+<!-- Project Lock UI Injection (v27) -->
 <script>
 (function(){'use strict';
 var _lockEl=null,_lockInp=null,_lockIcon=null;
@@ -61,13 +61,13 @@ function scanForMarkers(text){
   var changed=false;
 
   var lc=parseMarker(text,'LockConfirmed');
-  if(lc&&isForMe(lc.sessionKey)&&isValidPath(lc.value)){
+  if(lc&&isForMe(lc.sessionKey)&&isValidPath(lc.value)&&_pendingLock){
     sp(lc.value);_pendingLockPath=null;changed=true;
     _pendingLock=false;if(_lockTimer){clearTimeout(_lockTimer);_lockTimer=null;}
   }
 
   var clr=parseMarker(text,'LockCleared');
-  if(clr&&isForMe(clr.sessionKey)){
+  if(clr&&isForMe(clr.sessionKey)&&_pendingUnlock){
     rp();_pendingLockPath=null;changed=true;
     _pendingUnlock=false;if(_unlockTimer){clearTimeout(_unlockTimer);_unlockTimer=null;}
   }
