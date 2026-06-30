@@ -1,4 +1,4 @@
-<!-- Project Lock UI Injection (v28) -->
+<!-- Project Lock UI Injection (v29) -->
 <script>
 (function(){'use strict';
 var _lockEl=null,_lockInp=null,_lockIcon=null;
@@ -257,18 +257,6 @@ function mkEl(){
   };
   _lockEl=w;_lockInp=inp;
   updateUI();
-  // 页面加载时自动同步：如果 sessionStorage 有值直接显示，无值则自动检测
-  var cur=gp();
-  if(!cur){
-    setTimeout(function(){
-      if(!gp()){
-        _pendingDetect=true;
-        if(_detectTimer) clearTimeout(_detectTimer);
-        _detectTimer=setTimeout(function(){_pendingDetect=false;_detectTimer=null;},60000);
-        sendToAgent('[detect-project]');
-      }
-    },2000);
-  }
 
   var app=document.querySelector('openclaw-app');
   if(app) createObserver(app.shadowRoot||app);
