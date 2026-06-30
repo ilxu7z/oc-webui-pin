@@ -1,4 +1,4 @@
-<!-- Project Lock UI Injection (v21) -->
+<!-- Project Lock UI Injection (v22) -->
 <script>
 (function(){'use strict';
 var _lockEl=null,_lockInp=null,_lockIcon=null;
@@ -224,7 +224,7 @@ function mkEl(){
     }else{
       _pendingDetect=true;
       if(_detectTimer) clearTimeout(_detectTimer);
-      _detectTimer=setTimeout(function(){_pendingDetect=false;_detectTimer=null;},15000);
+      _detectTimer=setTimeout(function(){_pendingDetect=false;_detectTimer=null;},60000);
       sendToAgent('[detect-project]');
     }
   };
@@ -244,7 +244,7 @@ function mkEl(){
       }else if(isValidPath(path)){
         _pendingLockPath=path;updateUI();
         _pendingLock=true;if(_lockTimer) clearTimeout(_lockTimer);
-        _lockTimer=setTimeout(function(){_pendingLock=false;_lockTimer=null;},15000);
+        _lockTimer=setTimeout(function(){_pendingLock=false;_lockTimer=null;},60000);
         sendToAgent('[lock: '+path+']');
       }else{
         sp(path);updateUI();
