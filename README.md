@@ -1,6 +1,6 @@
 # oc-webui-pin
 
-📌 **OpenClaw WebUI 项目锁定补丁（v16）**
+📌 **OpenClaw WebUI 项目锁定补丁（v17）**
 
 在 OpenClaw 聊天 UI 中锁定工作目录，防止长对话中任务漂移。通过在 WebUI 工具栏注入项目路径锁定功能实现。
 
@@ -20,7 +20,7 @@
 | Shadow DOM 支持 | 穿透 `openclaw-app` web component 的 shadow root |
 | SPA 导航感知 | Monkey-patch `pushState/replaceState` 响应 Agent 切换 |
 
-## v16 修复内容
+## v17 修复内容
 
 | 问题 | 修复 |
 |------|------|
@@ -30,6 +30,7 @@
 | `localStorage` 跨 tab 冲突 | `sessionStorage` per-tab 隔离 |
 | 冗余 WS 原型劫持 | 轻量 WS 消息监听 + accumulate 回调，最小化侵入 |
 | Agent 端依赖模型推理 | AGENTS.md 硬编码指令预处理（回复 ONLY 标记，无额外文本） |
+| 会话隔离 | storage key 使用完整 session key（如 `agent:main:explicit:xxx`），同一浏览器窗口不同?session=标签互不干扰 |
 
 ## 兼容性
 
