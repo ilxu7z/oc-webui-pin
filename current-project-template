@@ -1,7 +1,12 @@
 # Project Lock
-# 由 Agent 接到 [lock: /path] 指令后自动写入
+# 由 WebUI 输入框或 agent 自动写入
 # 清空此文件 = 解除锁定（自由模式）
-
-#PATH:
-#FOCUS:
-#LOCKED_AT:
+# 格式：JSON 对象，key=sessionKey，value={path, focus, lockedAt}
+# 示例：
+# {
+#   "agent:main:explicit:xxx": {
+#     "path": "/Users/chee/Projects/MyProject",
+#     "focus": "MyProject 开发",
+#     "lockedAt": "2026-07-03T10:00:00+08:00"
+#   }
+# }
