@@ -1,4 +1,5 @@
-<!-- Project Lock UI Injection (v30) -->
+<!-- Project Lock UI Injection (v31) -->
+<!-- 1会话=1工作目录 · per-session localStorage + Agent .current-projects.json -->
 <script>
 (function(){'use strict';
 var _lockEl=null,_lockInp=null,_lockIcon=null;
@@ -6,20 +7,26 @@ var _pendingLockPath=null;
 var _pendingDetect=false,_detectTimer=null;
 var _pendingLock=false,_pendingUnlock=false,_lockTimer=null,_unlockTimer=null;
 
+// ===== 会话维度 key =====
+// 从 URL session= 参数提取，每个 Tab 独立
+// 格式: /chat?agent=main&session=agent:main:explicit:xxx
 function getSessionKey(){
   var sel=document.querySelector('[data-chat-session-picker-option][aria-selected="true"]');
   if(sel){var k=sel.getAttribute('data-session-key');if(k) return k;}
-  var s=location.search.match(/session=([^&]+)/);
+  var s=location.search.match(/session=([^&]+)/)||location.hash.match(/session=([^&]+)/);
   if(s){try{return decodeURIComponent(s[1]);}catch(e){}}
   return 'main';
 }
-function getSK(){return 'openclaw_project_lock_'+getSessionKey().replace(/[^a-zA-Z0-9_-]/g,'_');}
-function gp(){try{return sessionStorage.getItem(getSK())||'';}catch(e){return ''}}
-function sp(p){try{sessionStorage.setItem(getSK(),p);}catch(e){}}
-function rp(){try{sessionStorage.removeItem(getSK());}catch(e){}}
-function resetSK(){SK=null;}
+// localStorage key: 每个 session 独立，关 Tab 再开保留
+function getSK(){return 'openclaw_project_lock_'+getSessionKey().replace(/[^a-zA-Z0-9_.:-]/g,'_');}
+function gp(){try{return localStorage.getItem(getSK())||'';}catch(e){return ''}}
+function sp(p){try{localStorage.setItem(getSK(),p);}catch(e){}}
+function rp(){try{localStorage.removeItem(getSK());}catch(e){}}
+
+// ===== 路径校验 =====
 function isValidPath(p){return /^[\/~]|[A-Za-z]:[\\\/]/.test(p)}
 
+// ===== 发送命令到 Agent =====
 function sendToAgent(text){
   var app=document.querySelector('openclaw-app');
   if(!app) return false;
@@ -38,6 +45,9 @@ function sendToAgent(text){
   return true;
 }
 
+// ===== 标记解析 =====
+// Agent 回复格式: [TYPE: sessionKey::value]
+// sessionKey 固定为 'main'（WebChat 通道）
 function parseMarker(text,type){
   var re=new RegExp('\\['+type+':\\s*([^\\]]+)\\]');
   var m=text.match(re);
@@ -47,39 +57,43 @@ function parseMarker(text,type){
   if(sep<0) return {sessionKey:inner,value:''};
   return {sessionKey:inner.slice(0,sep).trim(),value:inner.slice(sep+2).trim()};
 }
+// 判断标记是否属于当前会话
+// Agent 发 'main'，前端 URL session= 是完整 key
+// 两者都接受：'main' 匹配所有 WebChat 会话（每个 Tab 独立 WS 连接，不会串）
 function isForMe(markerKey){
-  if(markerKey==='main'){
-    var cur=getSessionKey();
-    var parts=cur.split(':');
-    return parts.length>=2?parts[1]==='main':cur==='main';
-  }
+  if(markerKey==='main') return true;
   return markerKey===getSessionKey();
 }
 
+// ===== 扫描协议标记 =====
 function scanForMarkers(text){
   if(!text||typeof text!=='string') return false;
   var changed=false;
 
+  // [LockConfirmed: main::/path] — Agent 确认锁定
   var lc=parseMarker(text,'LockConfirmed');
   if(lc&&isForMe(lc.sessionKey)&&isValidPath(lc.value)&&_pendingLock){
     sp(lc.value);_pendingLockPath=null;changed=true;
     _pendingLock=false;if(_lockTimer){clearTimeout(_lockTimer);_lockTimer=null;}
+    console.log('[ProjectLock] Lock confirmed:', lc.value);
   }
 
+  // [LockCleared: main] — Agent 确认解锁
   var clr=parseMarker(text,'LockCleared');
   if(clr&&isForMe(clr.sessionKey)&&_pendingUnlock){
     rp();_pendingLockPath=null;changed=true;
     _pendingUnlock=false;if(_unlockTimer){clearTimeout(_unlockTimer);_unlockTimer=null;}
+    console.log('[ProjectLock] Lock cleared');
   }
 
+  // [Project: main::/path] — Agent 返回检测到的路径
   var pm=parseMarker(text,'Project');
   if(pm&&isForMe(pm.sessionKey)&&isValidPath(pm.value)){
     if(_pendingDetect){
-      // 不立即清除 _pendingDetect，允许多次覆盖
-      // WebSocket 回放历史消息时可能先到达旧标记再到达新标记
       sp(pm.value);changed=true;
       if(_detectTimer) clearTimeout(_detectTimer);
       _detectTimer=setTimeout(function(){_pendingDetect=false;_detectTimer=null;},60000);
+      console.log('[ProjectLock] Detected:', pm.value);
     }
   }
 
@@ -87,6 +101,7 @@ function scanForMarkers(text){
   return changed;
 }
 
+// ===== MutationObserver（捕获 DOM 中的标记） =====
 var _obs=null;
 function createObserver(root){
   if(_obs) _obs.disconnect();
@@ -96,7 +111,6 @@ function createObserver(root){
     timer=setTimeout(function(){
       timer=null;
       for(var m=0;m<mutations.length;m++){
-        // process addedNodes
         var nodes=mutations[m].addedNodes;
         for(var j=0;j<nodes.length;j++){
           var n=nodes[j];
@@ -112,7 +126,6 @@ function createObserver(root){
             }
           }
         }
-        // process characterData (streaming token append)
         if(mutations[m].type==='characterData'){
           var p=mutations[m].target.parentNode;
           while(p&&p.nodeType===1){
@@ -133,6 +146,7 @@ function createObserver(root){
   _obs.observe(root,{childList:true,subtree:true,characterData:true});
 }
 
+// ===== WebSocket 劫持（捕获流式响应中的标记） =====
 var _bracketBuf={};
 function accumulateStreamChunk(chunk,sourceId){
   var id=sourceId||'default';
@@ -198,6 +212,7 @@ function accumulateStreamChunk(chunk,sourceId){
   window.WebSocket._plPatched=true;
 })();
 
+// ===== UI 更新 =====
 function updateUI(){
   if(!_lockInp||!_lockIcon) return;
   var val=gp();
@@ -209,6 +224,7 @@ function updateUI(){
   _lockIcon.style.color=_pendingLockPath?'var(--oc-warning,#f59e0b)':locked?'var(--oc-success,#22c55e)':'';
 }
 
+// ===== 📌 UI 组件 =====
 function mkEl(){
   var w=document.createElement('div');
   w.id='openclaw-project-lock';
@@ -272,6 +288,7 @@ function mkEl(){
   return w;
 }
 
+// ===== 插入 UI =====
 function tryInsert(){
   if(_lockEl&&document.contains(_lockEl)) return true;
   document.querySelectorAll('#openclaw-project-lock').forEach(function(el){el.remove();});
