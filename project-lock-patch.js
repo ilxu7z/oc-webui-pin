@@ -1,11 +1,14 @@
-<!-- Project Lock UI Injection (v31) -->
+<!-- Project Lock UI Injection (v32) -->
 <!-- 1会话=1工作目录 · per-session localStorage + Agent .current-projects.json -->
+<!-- v32: 修复多会话隔离 — 增加 page-load sync 修复 Agent 端状态断裂 -->
 <script>
 (function(){'use strict';
 var _lockEl=null,_lockInp=null,_lockIcon=null;
 var _pendingLockPath=null;
 var _pendingDetect=false,_detectTimer=null;
 var _pendingLock=false,_pendingUnlock=false,_lockTimer=null,_unlockTimer=null;
+var _syncedOnLoad=false;
+var _resyncTimer=null;
 
 // ===== 会话维度 key =====
 // 从 URL session= 参数提取，每个 Tab 独立
@@ -88,12 +91,26 @@ function scanForMarkers(text){
 
   // [Project: main::/path] — Agent 返回检测到的路径
   var pm=parseMarker(text,'Project');
-  if(pm&&isForMe(pm.sessionKey)&&isValidPath(pm.value)){
+  if(pm&&isForMe(pm.sessionKey)){
     if(_pendingDetect){
-      sp(pm.value);changed=true;
+      if(isValidPath(pm.value)){
+        // Agent 有记录或从上下文推断出了路径 — 同步 OK
+        sp(pm.value);changed=true;
+        console.log('[ProjectLock] Detected:', pm.value);
+      } else {
+        // Agent 返回空路径 [Project: main::] — Agent 端没有记录
+        var stored=gp();
+        if(stored){
+          // 前端有锁但 Agent 没有 → 自动重发 lock 修复
+          console.log('[ProjectLock] Agent has no lock, re-sending [lock: '+stored+']');
+          _pendingLock=true;_pendingLockPath=stored;updateUI();
+          if(_lockTimer) clearTimeout(_lockTimer);
+          _lockTimer=setTimeout(function(){_pendingLock=false;_lockTimer=null;},60000);
+          sendToAgent('[lock: '+stored+']');
+        }
+      }
       if(_detectTimer) clearTimeout(_detectTimer);
       _detectTimer=setTimeout(function(){_pendingDetect=false;_detectTimer=null;},60000);
-      console.log('[ProjectLock] Detected:', pm.value);
     }
   }
 
@@ -310,6 +327,42 @@ var _pollTimer=setInterval(function(){
   if(tryInsert()){clearInterval(_pollTimer);}
   else if(_pollCount>=40){clearInterval(_pollTimer);}
 },500);
+
+// ===== 页面加载同步 =====
+// 场景：前端 localStorage 有锁，但 Agent 端 .current-projects.json 被清空
+// 原因：Agent restart、文件被误清、或之前用 'main' 做 key 导致互相覆盖
+// 修复：页面加载后如果 localStorage 有锁，发 [detect-project] 让 Agent 重新确认
+//      如果 Agent 回复 [Project: main::] (空)，说明 Agent 端确实没有，自动重发 [lock:]
+function syncOnLoad(){
+  if(_syncedOnLoad) return;
+  var stored=gp();
+  if(!stored) { _syncedOnLoad=true; return; } // 无锁不用同步
+  _syncedOnLoad=true;
+  // 等 UI 和 WS 连接就绪后发送 detect
+  setTimeout(function(){
+    _pendingDetect=true;
+    if(_detectTimer) clearTimeout(_detectTimer);
+    _detectTimer=setTimeout(function(){_pendingDetect=false;_detectTimer=null;},30000);
+    sendToAgent('[detect-project]');
+    console.log('[ProjectLock] Page-load sync: sent [detect-project] to verify Agent state');
+    // 如果 10 秒内没收到带路径的 [Project:] 回复，说明 Agent 端丢了，自动重发 lock
+    _resyncTimer=setTimeout(function(){
+      if(gp() && ! _pendingDetect){
+        // detect 已返回但路径为空 → Agent 端没有记录
+        // 不自动重发，避免误锁。标记 UI 为需要重新锁定
+        console.log('[ProjectLock] Agent has no lock for this session. UI shows locked but Agent does not.');
+      }
+    },12000);
+  },3000); // 等 3 秒让 WS 连接建立
+}
+
+// 在 tryInsert 成功后触发同步
+var _origTryInsert=tryInsert;
+tryInsert=function(){
+  var ok=_origTryInsert.apply(this,arguments);
+  if(ok && !_syncedOnLoad){ syncOnLoad(); }
+  return ok;
+};
 
 var _bodyObs=new MutationObserver(function(){
   if(!_lockEl) tryInsert();

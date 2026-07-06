@@ -96,4 +96,9 @@ Agent 为 Source of Truth。锁定状态由 Agent 通过 `.current-projects.json
 
 ### 标记格式说明
 
-所有 Agent→前端标记必须携带 `sessionKey`，格式为 `[TYPE: sessionKey::value]`。WebChat 通道固定用 `main` 作为 sessionKey。
+所有 Agent→前端标记必须携带 `sessionKey`，格式为 `[TYPE: sessionKey::value]`。
+
+**⚠️ sessionKey 两种用途必须区分：**
+
+1. **`.current-projects.json` 存储 key**：用 `session_status` 返回的完整 sessionKey（如 `agent:main:dashboard:33018615-xxx`）。**绝对不要用 `main` 做 storage key！**
+2. **Agent→前端标记格式**：WebChat 通道固定用 `main`。其他通道用完整 sessionKey。
