@@ -333,27 +333,11 @@ var _pollTimer=setInterval(function(){
 // 原因：Agent restart、文件被误清、或之前用 'main' 做 key 导致互相覆盖
 // 修复：页面加载后如果 localStorage 有锁，发 [detect-project] 让 Agent 重新确认
 //      如果 Agent 回复 [Project: main::] (空)，说明 Agent 端确实没有，自动重发 [lock:]
+// 已禁用：页面加载不再自动发送 [detect-project]
+// 之前的设计是 localStorage 有锁时自动同步 Agent 端状态（状态断裂修复）
+// 但会导致不必要的 WS 流量和 Agent 回复，用户选择停用此功能
 function syncOnLoad(){
-  if(_syncedOnLoad) return;
-  var stored=gp();
-  if(!stored) { _syncedOnLoad=true; return; } // 无锁不用同步
-  _syncedOnLoad=true;
-  // 等 UI 和 WS 连接就绪后发送 detect
-  setTimeout(function(){
-    _pendingDetect=true;
-    if(_detectTimer) clearTimeout(_detectTimer);
-    _detectTimer=setTimeout(function(){_pendingDetect=false;_detectTimer=null;},30000);
-    sendToAgent('[detect-project]');
-    console.log('[ProjectLock] Page-load sync: sent [detect-project] to verify Agent state');
-    // 如果 10 秒内没收到带路径的 [Project:] 回复，说明 Agent 端丢了，自动重发 lock
-    _resyncTimer=setTimeout(function(){
-      if(gp() && ! _pendingDetect){
-        // detect 已返回但路径为空 → Agent 端没有记录
-        // 不自动重发，避免误锁。标记 UI 为需要重新锁定
-        console.log('[ProjectLock] Agent has no lock for this session. UI shows locked but Agent does not.');
-      }
-    },12000);
-  },3000); // 等 3 秒让 WS 连接建立
+  _syncedOnLoad=true; // 直接标记完成，不做任何事
 }
 
 // 在 tryInsert 成功后触发同步
